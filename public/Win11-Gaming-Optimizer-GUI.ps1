@@ -443,7 +443,7 @@ function Show-MainWindow {
     [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Windows 11 Gaming Optimizer - Beast Mode"
+        Title="ny0 Gaming Optimizer - Beast Mode"
         Height="700" Width="1000"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanMinimize"
