@@ -306,7 +306,7 @@ function Invoke-GamingOptimizations {
 function Create-SystemRestorePoint {
     try {
         Enable-ComputerRestore -Drive "C:\"
-        Checkpoint-Computer -Description "Gaming Optimizer - $(Get-Date -Format 'yyyy-MM-dd HH:mm')" -RestorePointType "MODIFY_SETTINGS"
+        Checkpoint-Computer -Description "ny0 Tweaks - $(Get-Date -Format 'yyyy-MM-dd HH:mm')" -RestorePointType "MODIFY_SETTINGS"
     } catch { throw $_ }
 }
 
