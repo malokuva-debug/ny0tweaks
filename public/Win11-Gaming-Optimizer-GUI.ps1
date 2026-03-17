@@ -2,9 +2,9 @@
 
 <#
 .SYNOPSIS
-    Windows 11 Gaming Optimizer - GUI Edition
+    ny0 Gaming Optimizer - GUI Edition
 .DESCRIPTION
-    Web-executable GUI tool for Windows 11 gaming optimization
+    Web-executable GUI tool for ny0 gaming optimization
     Usage: iwr -useb YOUR_URL | iex
 .NOTES
     Version: 3.0 GUI Edition
@@ -358,7 +358,7 @@ function Show-MainWindow {
     [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Windows 11 Gaming Optimizer v3 - Beast Mode"
+        Title="ny0 Gaming Optimizer v3 - Beast Mode"
         Height="750" Width="1050"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanMinimize"
@@ -412,7 +412,7 @@ function Show-MainWindow {
         </Grid.RowDefinitions>
         <Border Grid.Row="0" Background="#FF007ACC" CornerRadius="5" Padding="15" Margin="0,0,0,10">
             <StackPanel>
-                <TextBlock Text="WINDOWS 11 GAMING OPTIMIZER v3 - BEAST MODE"
+                <TextBlock Text="ny0 GAMING OPTIMIZER v3 - BEAST MODE"
                           FontSize="22" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center"/>
                 <TextBlock Name="SystemInfoText" Text="Detecting hardware..."
                           FontSize="12" Foreground="White" HorizontalAlignment="Center" Margin="0,5,0,0"/>
@@ -530,7 +530,7 @@ function Show-MainWindow {
             </TabItem>
         </TabControl>
         <Border Grid.Row="2" Background="#FF2D2D30" CornerRadius="5" Padding="10" Margin="0,10,0,0">
-            <TextBlock Text="Gaming Optimizer v3.0 | Windows 11 | Always create a restore point before tweaking"
+            <TextBlock Text="Gaming Optimizer v3.0 | ny0 | Always create a restore point before tweaking"
                       FontSize="10" Foreground="Gray" HorizontalAlignment="Center"/>
         </Border>
     </Grid>
@@ -591,59 +591,40 @@ function Show-MainWindow {
         if ($confirm -ne "Yes") { return }
 
         try {
-            # Get the shadow copy ID that matches this restore point's creation time
-            $rp = Get-ComputerRestorePoint | Where-Object { $_.SequenceNumber -eq $selected.SequenceNumber }
-            if ($null -eq $rp) { throw "Restore point not found." }
-
-            # Match by creation time to find the VSS shadow copy
+            $seqNum = $selected.SequenceNumber
+            $rp = Get-ComputerRestorePoint | Where-Object { $_.SequenceNumber -eq $seqNum }
+            if ($null -eq $rp) { throw "Restore point #$seqNum not found." }
             $rpTime = $rp.ConvertToDateTime($rp.CreationTime)
-            $shadows = vssadmin list shadows /for=C: 2>$null
 
-            # Delete using wbadmin / diskshadow approach via PowerShell CIM
-            # Most reliable: delete all shadows for the specific RP via its sequence number
-            # Windows stores RPs as VSS snapshots - we delete by finding closest time match
-            $deleted = $false
-
-            # Try using the SystemRestore WMI static method (works on some systems)
-            try {
-                $null = [System.Management.ManagementClass]::new("\\.\root\default:SystemRestore").InvokeMethod("Delete", @([uint32]$selected.SequenceNumber))
-                $deleted = $true
-            } catch {}
-
-            if (-not $deleted) {
-                # Use vssadmin to delete all shadows older than or equal to this RP's time
-                # Build a temp script to run vssadmin with the right flags
-                $shadowId = $null
-                $vssOutput = & vssadmin list shadows /for=C: 2>&1
-                $currentId = $null
-                foreach ($line in $vssOutput) {
-                    if ($line -match "Shadow Copy ID:\s*(\{[^}]+\})") { $currentId = $matches[1] }
-                    if ($line -match "Original Volume:.*C:" -and $currentId) {
-                        # Try to match by checking if the shadow creation time is close to RP time
-                        if ($line -match "Creation time:\s*(.+)") {
-                            try {
-                                $shadowTime = [datetime]::Parse($matches[1].Trim())
-                                $diff = [math]::Abs(($shadowTime - $rpTime).TotalMinutes)
-                                if ($diff -lt 5) { $shadowId = $currentId; break }
-                            } catch {}
-                        }
-                    }
+            # Parse vssadmin output to find matching shadow copy ID by creation time
+            $shadowId  = $null
+            $currentId = $null
+            $vssLines  = & vssadmin list shadows /for=C: 2>&1
+            foreach ($line in $vssLines) {
+                if ($line -match "Shadow Copy ID:\s*(\{[^}]+\})") {
+                    $currentId = $matches[1]
                 }
-
-                if ($shadowId) {
-                    $result = & vssadmin delete shadows /shadow="$shadowId" /quiet 2>&1
-                    $deleted = $true
-                } else {
-                    # Last resort: use diskshadow script
-                    $dsScript = "$env:TEMP\ds_delete.txt"
-                    "delete shadows volume C: oldest" | Set-Content $dsScript -Encoding ASCII
-                    & diskshadow /s $dsScript 2>$null
-                    Remove-Item $dsScript -Force -ErrorAction SilentlyContinue
-                    $deleted = $true
+                if ($line -match "Creation time:\s*(.+)" -and $currentId) {
+                    try {
+                        $shadowTime = [datetime]::Parse($matches[1].Trim())
+                        $diffMin = [math]::Abs(($shadowTime - $rpTime).TotalMinutes)
+                        if ($diffMin -lt 5) {
+                            $shadowId  = $currentId
+                            $currentId = $null
+                        }
+                    } catch {}
                 }
             }
 
-            if ($deleted) {
+            if ($shadowId) {
+                # Delete the specific shadow copy by ID
+                $out = & vssadmin delete shadows /shadow="$shadowId" /quiet 2>&1
+                [System.Windows.MessageBox]::Show("Restore point deleted successfully.", "Deleted", "OK", "Information")
+            } else {
+                # Shadow ID not matched - offer to delete by sequence via WMI raw
+                $ns  = "root\default"
+                $cls = [wmiclass]"\\localhost\${ns}:SystemRestore"
+                $cls.Delete($seqNum) | Out-Null
                 [System.Windows.MessageBox]::Show("Restore point deleted successfully.", "Deleted", "OK", "Information")
             }
         } catch {
