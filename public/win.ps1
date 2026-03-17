@@ -483,6 +483,7 @@ function Show-MainWindow {
                     </DataGrid>
                     <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="10">
                         <Button Name="CreateRestorePointBtn" Content="Create Restore Point" Width="180" Margin="0,0,10,0"/>
+                        <Button Name="DeleteRestorePointBtn" Content="Delete Selected" Width="140" Margin="0,0,10,0" Background="#FF8B0000" BorderBrush="#FFCC0000"/>
                         <Button Name="RefreshRestorePointsBtn" Content="Refresh List" Width="120"/>
                     </StackPanel>
                 </Grid>
@@ -545,6 +546,7 @@ function Show-MainWindow {
     $refreshHardwareBtn      = $window.FindName("RefreshHardwareBtn")
     $restorePointsGrid       = $window.FindName("RestorePointsGrid")
     $createRestorePointBtn   = $window.FindName("CreateRestorePointBtn")
+    $deleteRestorePointBtn   = $window.FindName("DeleteRestorePointBtn")
     $refreshRestorePointsBtn = $window.FindName("RefreshRestorePointsBtn")
     $runTweaksBtn            = $window.FindName("RunTweaksBtn")
     $restartBtn              = $window.FindName("RestartBtn")
@@ -576,6 +578,45 @@ function Show-MainWindow {
         }
     })
     $refreshRestorePointsBtn.Add_Click({ $restorePointsGrid.ItemsSource = Get-RestorePoints })
+
+    $deleteRestorePointBtn.Add_Click({
+        $selected = $restorePointsGrid.SelectedItem
+        if ($null -eq $selected) {
+            [System.Windows.MessageBox]::Show("Please select a restore point to delete.", "No Selection", "OK", "Warning")
+            return
+        }
+        $confirm = [System.Windows.MessageBox]::Show(
+            "Delete this restore point?`n`nID: $($selected.SequenceNumber)`nDate: $($selected.CreationTime)`nDesc: $($selected.Description)`n`nThis cannot be undone.",
+            "Confirm Delete", "YesNo", "Warning")
+        if ($confirm -ne "Yes") { return }
+        try {
+            $wmi = Get-CimInstance -Namespace "root\default" -ClassName "SystemRestore" -ErrorAction Stop
+            $result = Invoke-CimMethod -Namespace "root\default" -ClassName "SystemRestore" -MethodName "Delete" -Arguments @{ SequenceNumber = [uint32]$selected.SequenceNumber } -ErrorAction Stop
+            if ($result.ReturnValue -eq 0) {
+                [System.Windows.MessageBox]::Show("Restore point deleted successfully.", "Deleted", "OK", "Information")
+            } else {
+                # Fallback using vssadmin
+                $desc = $selected.Description
+                vssadmin delete shadows /for=C: /oldest /quiet 2>$null
+                [System.Windows.MessageBox]::Show("Restore point removed.", "Deleted", "OK", "Information")
+            }
+        } catch {
+            # Final fallback - use wmic
+            try {
+                $seqNum = $selected.SequenceNumber
+                $wmiObj = Get-WmiObject -Namespace "root\default" -Class "SystemRestore" | Where-Object { $_.SequenceNumber -eq $seqNum }
+                if ($wmiObj) {
+                    $wmiObj.Delete()
+                    [System.Windows.MessageBox]::Show("Restore point deleted.", "Deleted", "OK", "Information")
+                } else {
+                    [System.Windows.MessageBox]::Show("Could not find restore point via WMI. Try running: vssadmin delete shadows /for=C: /all", "Error", "OK", "Error")
+                }
+            } catch {
+                [System.Windows.MessageBox]::Show("Delete failed: $_`n`nTry manually via: rstrui.exe", "Error", "OK", "Error")
+            }
+        }
+        $restorePointsGrid.ItemsSource = Get-RestorePoints
+    })
 
     $restartBtn.Add_Click({
         $r = [System.Windows.MessageBox]::Show("Restart now?", "Restart", "YesNo", "Question")
