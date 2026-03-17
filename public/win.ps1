@@ -591,59 +591,40 @@ function Show-MainWindow {
         if ($confirm -ne "Yes") { return }
 
         try {
-            # Get the shadow copy ID that matches this restore point's creation time
-            $rp = Get-ComputerRestorePoint | Where-Object { $_.SequenceNumber -eq $selected.SequenceNumber }
-            if ($null -eq $rp) { throw "Restore point not found." }
-
-            # Match by creation time to find the VSS shadow copy
+            $seqNum = $selected.SequenceNumber
+            $rp = Get-ComputerRestorePoint | Where-Object { $_.SequenceNumber -eq $seqNum }
+            if ($null -eq $rp) { throw "Restore point #$seqNum not found." }
             $rpTime = $rp.ConvertToDateTime($rp.CreationTime)
-            $shadows = vssadmin list shadows /for=C: 2>$null
 
-            # Delete using wbadmin / diskshadow approach via PowerShell CIM
-            # Most reliable: delete all shadows for the specific RP via its sequence number
-            # Windows stores RPs as VSS snapshots - we delete by finding closest time match
-            $deleted = $false
-
-            # Try using the SystemRestore WMI static method (works on some systems)
-            try {
-                $null = [System.Management.ManagementClass]::new("\\.\root\default:SystemRestore").InvokeMethod("Delete", @([uint32]$selected.SequenceNumber))
-                $deleted = $true
-            } catch {}
-
-            if (-not $deleted) {
-                # Use vssadmin to delete all shadows older than or equal to this RP's time
-                # Build a temp script to run vssadmin with the right flags
-                $shadowId = $null
-                $vssOutput = & vssadmin list shadows /for=C: 2>&1
-                $currentId = $null
-                foreach ($line in $vssOutput) {
-                    if ($line -match "Shadow Copy ID:\s*(\{[^}]+\})") { $currentId = $matches[1] }
-                    if ($line -match "Original Volume:.*C:" -and $currentId) {
-                        # Try to match by checking if the shadow creation time is close to RP time
-                        if ($line -match "Creation time:\s*(.+)") {
-                            try {
-                                $shadowTime = [datetime]::Parse($matches[1].Trim())
-                                $diff = [math]::Abs(($shadowTime - $rpTime).TotalMinutes)
-                                if ($diff -lt 5) { $shadowId = $currentId; break }
-                            } catch {}
-                        }
-                    }
+            # Parse vssadmin output to find matching shadow copy ID by creation time
+            $shadowId  = $null
+            $currentId = $null
+            $vssLines  = & vssadmin list shadows /for=C: 2>&1
+            foreach ($line in $vssLines) {
+                if ($line -match "Shadow Copy ID:\s*(\{[^}]+\})") {
+                    $currentId = $matches[1]
                 }
-
-                if ($shadowId) {
-                    $result = & vssadmin delete shadows /shadow="$shadowId" /quiet 2>&1
-                    $deleted = $true
-                } else {
-                    # Last resort: use diskshadow script
-                    $dsScript = "$env:TEMP\ds_delete.txt"
-                    "delete shadows volume C: oldest" | Set-Content $dsScript -Encoding ASCII
-                    & diskshadow /s $dsScript 2>$null
-                    Remove-Item $dsScript -Force -ErrorAction SilentlyContinue
-                    $deleted = $true
+                if ($line -match "Creation time:\s*(.+)" -and $currentId) {
+                    try {
+                        $shadowTime = [datetime]::Parse($matches[1].Trim())
+                        $diffMin = [math]::Abs(($shadowTime - $rpTime).TotalMinutes)
+                        if ($diffMin -lt 5) {
+                            $shadowId  = $currentId
+                            $currentId = $null
+                        }
+                    } catch {}
                 }
             }
 
-            if ($deleted) {
+            if ($shadowId) {
+                # Delete the specific shadow copy by ID
+                $out = & vssadmin delete shadows /shadow="$shadowId" /quiet 2>&1
+                [System.Windows.MessageBox]::Show("Restore point deleted successfully.", "Deleted", "OK", "Information")
+            } else {
+                # Shadow ID not matched - offer to delete by sequence via WMI raw
+                $ns  = "root\default"
+                $cls = [wmiclass]"\\localhost\${ns}:SystemRestore"
+                $cls.Delete($seqNum) | Out-Null
                 [System.Windows.MessageBox]::Show("Restore point deleted successfully.", "Deleted", "OK", "Information")
             }
         } catch {
