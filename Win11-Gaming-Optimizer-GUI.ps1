@@ -2,7 +2,7 @@
 
 <#
 .SYNOPSIS
-    Windows 11 Gaming Optimizer - GUI Edition (ny0)
+    NY0 Windows 11 Gaming Optimizer - GUI Edition
 .DESCRIPTION
     Web-executable GUI tool for Windows 11 gaming optimization
     Usage: iwr -useb YOUR_URL | iex
