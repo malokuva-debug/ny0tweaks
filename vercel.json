@@ -1,0 +1,19 @@
+{
+  "rewrites": [
+    { "source": "/win", "destination": "/Win11-Gaming-Optimizer-GUI.ps1" }
+  ],
+  "headers": [
+    {
+      "source": "/win",
+      "headers": [
+        { "key": "Content-Type", "value": "text/plain; charset=utf-8" }
+      ]
+    },
+    {
+      "source": "/(.*\\.ps1)",
+      "headers": [
+        { "key": "Content-Type", "value": "text/plain; charset=utf-8" }
+      ]
+    }
+  ]
+}
