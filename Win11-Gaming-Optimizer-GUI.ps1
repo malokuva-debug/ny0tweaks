@@ -2,7 +2,7 @@
 
 <#
 .SYNOPSIS
-    Windows 11 Gaming Optimizer - GUI Edition
+    Windows 11 Gaming Optimizer - GUI Edition (ny0)
 .DESCRIPTION
     Web-executable GUI tool for Windows 11 gaming optimization
     Usage: iwr -useb YOUR_URL | iex
@@ -30,7 +30,6 @@ function Get-SystemInfo {
     }
     
     try {
-        # CPU Information
         $cpu = Get-CimInstance -ClassName Win32_Processor
         $hwInfo.CPU = @{
             Name = $cpu.Name
@@ -42,7 +41,6 @@ function Get-SystemInfo {
             Generation = Get-CPUGeneration -cpuName $cpu.Name
         }
         
-        # GPU Information
         $gpu = Get-CimInstance -ClassName Win32_VideoController | Where-Object { $_.Name -notlike "*Microsoft*" } | Select-Object -First 1
         $hwInfo.GPU = @{
             Name = $gpu.Name
@@ -54,7 +52,6 @@ function Get-SystemInfo {
             VideoRAM = [math]::Round($gpu.AdapterRAM / 1GB, 2)
         }
         
-        # RAM Information
         $ram = Get-CimInstance -ClassName Win32_PhysicalMemory
         $totalRAM = ($ram | Measure-Object -Property Capacity -Sum).Sum
         $hwInfo.RAM = @{
@@ -65,7 +62,6 @@ function Get-SystemInfo {
             PartNumber = ($ram | Select-Object -First 1).PartNumber
         }
         
-        # Motherboard Information
         $mobo = Get-CimInstance -ClassName Win32_BaseBoard
         $hwInfo.Motherboard = @{
             Manufacturer = $mobo.Manufacturer
@@ -73,11 +69,8 @@ function Get-SystemInfo {
             Version = $mobo.Version
         }
         
-        # Storage Information
         $storage = Get-PhysicalDisk
-        $hwInfo.Storage = @{
-            Drives = @()
-        }
+        $hwInfo.Storage = @{ Drives = @() }
         foreach ($drive in $storage) {
             $hwInfo.Storage.Drives += @{
                 Model = $drive.FriendlyName
@@ -87,7 +80,6 @@ function Get-SystemInfo {
             }
         }
         
-        # OS Information
         $os = Get-CimInstance -ClassName Win32_OperatingSystem
         $hwInfo.OS = @{
             Name = $os.Caption
@@ -105,7 +97,6 @@ function Get-SystemInfo {
 
 function Get-CPUGeneration {
     param([string]$cpuName)
-    
     if ($cpuName -like "*Intel*") {
         if ($cpuName -match "14th|14900|14700|14600") { return "14th Gen (Raptor Lake Refresh)" }
         elseif ($cpuName -match "13th|13900|13700|13600") { return "13th Gen (Raptor Lake)" }
@@ -121,160 +112,153 @@ function Get-CPUGeneration {
         elseif ($cpuName -match "3950|3900|3800|3700|3600") { return "Ryzen 3000 Series (Zen 2)" }
         else { return "Older Generation" }
     }
-    
     return "Unknown"
 }
 
 function Get-BIOSInstructions {
     param($hardware)
     
+    $SEP = "-------------------------------------------------------"
     $instructions = ""
     $cpuMfg = $hardware.CPU.Manufacturer
     $gpuMfg = $hardware.GPU.Manufacturer
     $moboMfg = $hardware.Motherboard.Manufacturer
     
-    # CPU-specific instructions
-    $instructions += "═══════════════════════════════════════════════════════`n"
+    $instructions += "$SEP`n"
     $instructions += "  CPU OPTIMIZATION - $($hardware.CPU.Name)`n"
-    $instructions += "═══════════════════════════════════════════════════════`n`n"
+    $instructions += "$SEP`n`n"
     
     if ($cpuMfg -eq "Intel") {
-        $instructions += "✓ Intel Turbo Boost Technology: ENABLED`n"
-        $instructions += "✓ Intel Turbo Boost Max 3.0: ENABLED (if available)`n"
-        $instructions += "✓ Enhanced Intel SpeedStep: ENABLED`n"
-        $instructions += "✓ Hyper-Threading: ENABLED`n"
-        $instructions += "✓ CPU C-States: DISABLED (for lowest latency)`n"
-        $instructions += "  - C1E Support: DISABLED`n"
-        $instructions += "  - C3/C6/C7 State: DISABLED`n"
-        $instructions += "  - Package C State: DISABLED`n"
+        $instructions += "[+] Intel Turbo Boost Technology: ENABLED`n"
+        $instructions += "[+] Intel Turbo Boost Max 3.0: ENABLED (if available)`n"
+        $instructions += "[+] Enhanced Intel SpeedStep: ENABLED`n"
+        $instructions += "[+] Hyper-Threading: ENABLED`n"
+        $instructions += "[+] CPU C-States: DISABLED (for lowest latency)`n"
+        $instructions += "    - C1E Support: DISABLED`n"
+        $instructions += "    - C3/C6/C7 State: DISABLED`n"
+        $instructions += "    - Package C State: DISABLED`n"
     }
     elseif ($cpuMfg -eq "AMD") {
-        $instructions += "✓ Precision Boost Overdrive (PBO): ENABLED`n"
-        $instructions += "✓ Core Performance Boost: ENABLED`n"
-        $instructions += "✓ SMT (Simultaneous Multi-Threading): ENABLED`n"
-        $instructions += "✓ Global C-State Control: DISABLED (for lowest latency)`n"
-        $instructions += "✓ CPPC (Collaborative Processor Performance Control): ENABLED`n"
-        $instructions += "✓ CPPC Preferred Cores: ENABLED`n"
+        $instructions += "[+] Precision Boost Overdrive (PBO): ENABLED`n"
+        $instructions += "[+] Core Performance Boost: ENABLED`n"
+        $instructions += "[+] SMT (Simultaneous Multi-Threading): ENABLED`n"
+        $instructions += "[+] Global C-State Control: DISABLED (for lowest latency)`n"
+        $instructions += "[+] CPPC (Collaborative Processor Performance Control): ENABLED`n"
+        $instructions += "[+] CPPC Preferred Cores: ENABLED`n"
     }
     
-    # RAM Instructions
-    $instructions += "`n═══════════════════════════════════════════════════════`n"
+    $instructions += "`n$SEP`n"
     $instructions += "  MEMORY OPTIMIZATION - $($hardware.RAM.TotalGB)GB @ $($hardware.RAM.Speed)MHz`n"
-    $instructions += "═══════════════════════════════════════════════════════`n`n"
+    $instructions += "$SEP`n`n"
     
     if ($cpuMfg -eq "Intel") {
-        $instructions += "✓ XMP (Extreme Memory Profile): ENABLED - Profile 1`n"
+        $instructions += "[+] XMP (Extreme Memory Profile): ENABLED - Profile 1`n"
     }
     elseif ($cpuMfg -eq "AMD") {
-        $instructions += "✓ DOCP/EXPO (AMD Memory Profile): ENABLED - Profile 1`n"
+        $instructions += "[+] DOCP/EXPO (AMD Memory Profile): ENABLED - Profile 1`n"
     }
-    $instructions += "✓ Memory Fast Boot: ENABLED`n"
-    $instructions += "✓ Gear Down Mode: DISABLED (if stable)`n"
-    $instructions += "✓ Command Rate: 1T (if stable, otherwise 2T)`n"
+    $instructions += "[+] Memory Fast Boot: ENABLED`n"
+    $instructions += "[+] Gear Down Mode: DISABLED (if stable)`n"
+    $instructions += "[+] Command Rate: 1T (if stable, otherwise 2T)`n"
     
-    # GPU Instructions
-    $instructions += "`n═══════════════════════════════════════════════════════`n"
+    $instructions += "`n$SEP`n"
     $instructions += "  GPU/PCIe OPTIMIZATION - $($hardware.GPU.Name)`n"
-    $instructions += "═══════════════════════════════════════════════════════`n`n"
+    $instructions += "$SEP`n`n"
     
-    $instructions += "✓ Above 4G Decoding: ENABLED`n"
-    $instructions += "✓ Resizable BAR (Re-Size BAR): ENABLED`n"
+    $instructions += "[+] Above 4G Decoding: ENABLED`n"
+    $instructions += "[+] Resizable BAR (Re-Size BAR): ENABLED`n"
     if ($gpuMfg -eq "AMD") {
-        $instructions += "  (AMD Smart Access Memory)`n"
+        $instructions += "    (AMD Smart Access Memory)`n"
     }
-    $instructions += "✓ PCIe Slot 1 Speed: Gen 4.0 (or Gen 3.0 if Gen 4 unstable)`n"
-    $instructions += "✓ PCIe ASPM: DISABLED`n"
-    $instructions += "✓ Primary Display: PCIe / Auto`n"
+    $instructions += "[+] PCIe Slot 1 Speed: Gen 4.0 (or Gen 3.0 if Gen 4 unstable)`n"
+    $instructions += "[+] PCIe ASPM: DISABLED`n"
+    $instructions += "[+] Primary Display: PCIe / Auto`n"
     
-    # Storage Instructions
-    $instructions += "`n═══════════════════════════════════════════════════════`n"
+    $instructions += "`n$SEP`n"
     $instructions += "  STORAGE OPTIMIZATION`n"
-    $instructions += "═══════════════════════════════════════════════════════`n`n"
+    $instructions += "$SEP`n`n"
     
-    $instructions += "✓ SATA Mode: AHCI (not IDE)`n"
+    $instructions += "[+] SATA Mode: AHCI (not IDE)`n"
     foreach ($drive in $hardware.Storage.Drives) {
         if ($drive.MediaType -eq "SSD" -or $drive.BusType -eq "NVMe") {
-            $instructions += "✓ $($drive.Model) - Ensure M.2 slot is Gen 3.0/4.0`n"
+            $instructions += "[+] $($drive.Model) - Ensure M.2 slot is Gen 3.0/4.0`n"
         }
     }
     
-    # Motherboard-specific
-    $instructions += "`n═══════════════════════════════════════════════════════`n"
+    $instructions += "`n$SEP`n"
     $instructions += "  MOTHERBOARD SPECIFIC - $($hardware.Motherboard.Manufacturer)`n"
-    $instructions += "═══════════════════════════════════════════════════════`n`n"
+    $instructions += "$SEP`n`n"
     
     switch -Wildcard ($moboMfg) {
         "*ASUS*" {
             $instructions += "Location: AI Tweaker / Extreme Tweaker menu`n"
-            $instructions += "✓ Performance Bias: Performance`n"
-            $instructions += "✓ MultiCore Enhancement (MCE): ENABLED`n"
-            $instructions += "✓ ASUS Performance Enhancement: ENABLED`n"
+            $instructions += "[+] Performance Bias: Performance`n"
+            $instructions += "[+] MultiCore Enhancement (MCE): ENABLED`n"
+            $instructions += "[+] ASUS Performance Enhancement: ENABLED`n"
         }
         "*MSI*" {
             $instructions += "Location: OC / Overclocking menu`n"
-            $instructions += "✓ Game Boost: Level 2-4 (monitor temps!)`n"
-            $instructions += "✓ A-XMP: ENABLED`n"
-            $instructions += "✓ Memory Fast Boot: ENABLED`n"
+            $instructions += "[+] Game Boost: Level 2-4 (monitor temps!)`n"
+            $instructions += "[+] A-XMP: ENABLED`n"
+            $instructions += "[+] Memory Fast Boot: ENABLED`n"
         }
         "*Gigabyte*" {
             $instructions += "Location: M.I.T. (Motherboard Intelligent Tweaker)`n"
-            $instructions += "✓ Performance Boost: Turbo`n"
-            $instructions += "✓ Extreme Memory Profile (XMP): Profile 1`n"
-            $instructions += "✓ High Bandwidth: ENABLED`n"
+            $instructions += "[+] Performance Boost: Turbo`n"
+            $instructions += "[+] Extreme Memory Profile (XMP): Profile 1`n"
+            $instructions += "[+] High Bandwidth: ENABLED`n"
         }
         "*AORUS*" {
             $instructions += "Location: M.I.T. (Motherboard Intelligent Tweaker)`n"
-            $instructions += "✓ Performance Boost: Turbo`n"
-            $instructions += "✓ Extreme Memory Profile (XMP): Profile 1`n"
-            $instructions += "✓ High Bandwidth: ENABLED`n"
+            $instructions += "[+] Performance Boost: Turbo`n"
+            $instructions += "[+] Extreme Memory Profile (XMP): Profile 1`n"
+            $instructions += "[+] High Bandwidth: ENABLED`n"
         }
         "*ASRock*" {
             $instructions += "Location: OC Tweaker menu`n"
-            $instructions += "✓ Automatic OC: Level 1-3 (monitor temps!)`n"
-            $instructions += "✓ XMP 2.0 Profile: Load Profile`n"
+            $instructions += "[+] Automatic OC: Level 1-3 (monitor temps!)`n"
+            $instructions += "[+] XMP 2.0 Profile: Load Profile`n"
         }
         default {
             $instructions += "Check your motherboard manual for equivalent settings`n"
         }
     }
     
-    # Additional optimizations
-    $instructions += "`n═══════════════════════════════════════════════════════`n"
+    $instructions += "`n$SEP`n"
     $instructions += "  ADDITIONAL BIOS OPTIMIZATIONS`n"
-    $instructions += "═══════════════════════════════════════════════════════`n`n"
+    $instructions += "$SEP`n`n"
     
-    $instructions += "✓ Fast Boot: ENABLED`n"
-    $instructions += "✓ Boot Mode: UEFI (not Legacy/CSM)`n"
-    $instructions += "✓ Secure Boot: DISABLED`n"
-    $instructions += "✓ CSM (Compatibility Support Module): DISABLED`n"
-    $instructions += "✓ ErP Ready: DISABLED`n"
-    $instructions += "✓ Intel VT-d / AMD IOMMU: DISABLED (unless using VMs)`n"
+    $instructions += "[+] Fast Boot: ENABLED`n"
+    $instructions += "[+] Boot Mode: UEFI (not Legacy/CSM)`n"
+    $instructions += "[+] Secure Boot: DISABLED`n"
+    $instructions += "[+] CSM (Compatibility Support Module): DISABLED`n"
+    $instructions += "[+] ErP Ready: DISABLED`n"
+    $instructions += "[+] Intel VT-d / AMD IOMMU: DISABLED (unless using VMs)`n"
     
-    # GPU Control Panel Instructions
-    $instructions += "`n═══════════════════════════════════════════════════════`n"
+    $instructions += "`n$SEP`n"
     $instructions += "  GPU CONTROL PANEL SETTINGS`n"
-    $instructions += "═══════════════════════════════════════════════════════`n`n"
+    $instructions += "$SEP`n`n"
     
     if ($gpuMfg -eq "NVIDIA") {
-        $instructions += "NVIDIA Control Panel → Manage 3D Settings:`n"
-        $instructions += "✓ Power Management Mode: Prefer Maximum Performance`n"
-        $instructions += "✓ Texture Filtering Quality: Performance`n"
-        $instructions += "✓ Low Latency Mode: Ultra (if supported)`n"
-        $instructions += "✓ Max Frame Rate: Off or Monitor refresh + 3`n"
-        $instructions += "✓ Vertical Sync: Use game settings`n"
+        $instructions += "NVIDIA Control Panel -> Manage 3D Settings:`n"
+        $instructions += "[+] Power Management Mode: Prefer Maximum Performance`n"
+        $instructions += "[+] Texture Filtering Quality: Performance`n"
+        $instructions += "[+] Low Latency Mode: Ultra (if supported)`n"
+        $instructions += "[+] Max Frame Rate: Off or Monitor refresh + 3`n"
+        $instructions += "[+] Vertical Sync: Use game settings`n"
     }
     elseif ($gpuMfg -eq "AMD") {
-        $instructions += "AMD Radeon Software → Gaming → Graphics:`n"
-        $instructions += "✓ Radeon Anti-Lag: Enabled`n"
-        $instructions += "✓ Radeon Boost: Enabled (if acceptable)`n"
-        $instructions += "✓ Radeon Chill: Disabled or match refresh rate`n"
-        $instructions += "✓ Image Sharpening: User preference`n"
-        $instructions += "✓ Texture Filtering Quality: Performance`n"
+        $instructions += "AMD Radeon Software -> Gaming -> Graphics:`n"
+        $instructions += "[+] Radeon Anti-Lag: Enabled`n"
+        $instructions += "[+] Radeon Boost: Enabled (if acceptable)`n"
+        $instructions += "[+] Radeon Chill: Disabled or match refresh rate`n"
+        $instructions += "[+] Image Sharpening: User preference`n"
+        $instructions += "[+] Texture Filtering Quality: Performance`n"
     }
     elseif ($gpuMfg -eq "Intel") {
         $instructions += "Intel Arc Control:`n"
-        $instructions += "✓ Power Settings: Maximum Performance`n"
-        $instructions += "✓ XeSS: Enable in supported games`n"
+        $instructions += "[+] Power Settings: Maximum Performance`n"
+        $instructions += "[+] XeSS: Enable in supported games`n"
     }
     
     return $instructions
@@ -309,14 +293,12 @@ function Invoke-GamingOptimizations {
     foreach ($step in $steps) {
         $currentStep++
         $progressCallback.Invoke($currentStep, $totalSteps, $step.Name)
-        
         try {
             & $step.Action
-            Add-OptimizationLog "✓ $($step.Name)" "Success"
+            Add-OptimizationLog "[OK] $($step.Name)" "Success"
         } catch {
-            Add-OptimizationLog "✗ $($step.Name): $_" "Error"
+            Add-OptimizationLog "[FAIL] $($step.Name): $_" "Error"
         }
-        
         Start-Sleep -Milliseconds 500
     }
 }
@@ -325,15 +307,12 @@ function Create-SystemRestorePoint {
     try {
         Enable-ComputerRestore -Drive "C:\"
         Checkpoint-Computer -Description "Gaming Optimizer - $(Get-Date -Format 'yyyy-MM-dd HH:mm')" -RestorePointType "MODIFY_SETTINGS"
-    } catch {
-        throw $_
-    }
+    } catch { throw $_ }
 }
 
 function Disable-UnnecessaryServices {
-    $services = @("DiagTrack", "dmwappushservice", "SysMain", "WSearch", "TabletInputService", 
+    $services = @("DiagTrack", "dmwappushservice", "SysMain", "WSearch", "TabletInputService",
                   "wisvc", "RetailDemo", "Fax", "MapsBroker", "lfsvc")
-    
     foreach ($service in $services) {
         try {
             $svc = Get-Service -Name $service -ErrorAction SilentlyContinue
@@ -435,9 +414,9 @@ function Add-OptimizationLog {
 
 function Get-RestorePoints {
     try {
-        $points = Get-ComputerRestorePoint | Select-Object -Property SequenceNumber, 
-            @{Name='CreationTime';Expression={$_.ConvertToDateTime($_.CreationTime)}}, 
-            Description, 
+        $points = Get-ComputerRestorePoint | Select-Object -Property SequenceNumber,
+            @{Name='CreationTime';Expression={$_.ConvertToDateTime($_.CreationTime)}},
+            Description,
             @{Name='Type';Expression={
                 switch ($_.RestorePointType) {
                     0 { "Application Install" }
@@ -459,18 +438,17 @@ function Get-RestorePoints {
 #region GUI Functions
 
 function Show-MainWindow {
-    # Detect hardware first
     $Global:DetectedHardware = Get-SystemInfo
     
     [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Windows 11 Gaming Optimizer - Beast Mode" 
-        Height="700" Width="1000" 
+        Title="Windows 11 Gaming Optimizer - Beast Mode"
+        Height="700" Width="1000"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanMinimize"
         Background="#FF1E1E1E">
-    
+
     <Window.Resources>
         <Style TargetType="Button">
             <Setter Property="Background" Value="#FF2D2D30"/>
@@ -486,7 +464,7 @@ function Show-MainWindow {
                 </Trigger>
             </Style.Triggers>
         </Style>
-        
+
         <Style TargetType="TabItem">
             <Setter Property="Template">
                 <Setter.Value>
@@ -510,75 +488,66 @@ function Show-MainWindow {
             <Setter Property="FontWeight" Value="SemiBold"/>
         </Style>
     </Window.Resources>
-    
+
     <Grid Margin="10">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        
-        <!-- Header -->
+
         <Border Grid.Row="0" Background="#FF007ACC" CornerRadius="5" Padding="15" Margin="0,0,0,10">
             <StackPanel>
-                <TextBlock Text="🎮 WINDOWS 11 GAMING OPTIMIZER - BEAST MODE" 
+                <TextBlock Text="WINDOWS 11 GAMING OPTIMIZER - BEAST MODE"
                           FontSize="24" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center"/>
-                <TextBlock Name="SystemInfoText" Text="Detecting hardware..." 
+                <TextBlock Name="SystemInfoText" Text="Detecting hardware..."
                           FontSize="12" Foreground="White" HorizontalAlignment="Center" Margin="0,5,0,0"/>
             </StackPanel>
         </Border>
-        
-        <!-- Tab Control -->
+
         <TabControl Grid.Row="1" Background="#FF252526" BorderBrush="#FF007ACC" BorderThickness="1">
-            
-            <!-- Instructions Tab -->
-            <TabItem Header="📋 Instructions">
+
+            <TabItem Header="[1] Instructions">
                 <Grid Background="#FF1E1E1E">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
-                    
-                    <TextBlock Grid.Row="0" Text="Hardware-Specific BIOS &amp; GPU Settings" 
+                    <TextBlock Grid.Row="0" Text="Hardware-Specific BIOS and GPU Settings"
                               FontSize="18" FontWeight="Bold" Foreground="#FF007ACC" Margin="10"/>
-                    
                     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="10">
-                        <TextBox Name="InstructionsTextBox" 
-                                Text="Loading instructions..." 
-                                Background="#FF2D2D30" 
-                                Foreground="White" 
-                                FontFamily="Consolas" 
+                        <TextBox Name="InstructionsTextBox"
+                                Text="Loading instructions..."
+                                Background="#FF2D2D30"
+                                Foreground="White"
+                                FontFamily="Courier New"
                                 FontSize="12"
-                                IsReadOnly="True" 
-                                TextWrapping="Wrap" 
+                                IsReadOnly="True"
+                                TextWrapping="Wrap"
                                 BorderThickness="0"
                                 Padding="10"/>
                     </ScrollViewer>
-                    
                     <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="10">
-                        <Button Name="CopyInstructionsBtn" Content="📋 Copy to Clipboard" Width="150" Margin="0,0,10,0"/>
-                        <Button Name="RefreshHardwareBtn" Content="🔄 Refresh Hardware" Width="150"/>
+                        <Button Name="CopyInstructionsBtn" Content="Copy to Clipboard" Width="150" Margin="0,0,10,0"/>
+                        <Button Name="RefreshHardwareBtn" Content="Refresh Hardware" Width="150"/>
                     </StackPanel>
                 </Grid>
             </TabItem>
-            
-            <!-- Restore Point Tab -->
-            <TabItem Header="💾 Restore Points">
+
+            <TabItem Header="[2] Restore Points">
                 <Grid Background="#FF1E1E1E">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
-                    
-                    <TextBlock Grid.Row="0" Text="System Restore Points Management" 
+                    <TextBlock Grid.Row="0" Text="System Restore Points Management"
                               FontSize="18" FontWeight="Bold" Foreground="#FF007ACC" Margin="10"/>
-                    
-                    <DataGrid Name="RestorePointsGrid" 
-                             Grid.Row="1" 
+                    <DataGrid Name="RestorePointsGrid"
+                             Grid.Row="1"
                              Margin="10"
-                             AutoGenerateColumns="False" 
+                             AutoGenerateColumns="False"
                              IsReadOnly="True"
                              Background="#FF2D2D30"
                              Foreground="White"
@@ -612,16 +581,14 @@ function Show-MainWindow {
                             </Style>
                         </DataGrid.RowStyle>
                     </DataGrid>
-                    
                     <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="10">
-                        <Button Name="CreateRestorePointBtn" Content="➕ Create Restore Point" Width="180" Margin="0,0,10,0"/>
-                        <Button Name="RefreshRestorePointsBtn" Content="🔄 Refresh List" Width="120"/>
+                        <Button Name="CreateRestorePointBtn" Content="Create Restore Point" Width="180" Margin="0,0,10,0"/>
+                        <Button Name="RefreshRestorePointsBtn" Content="Refresh List" Width="120"/>
                     </StackPanel>
                 </Grid>
             </TabItem>
-            
-            <!-- Tweaks Tab -->
-            <TabItem Header="⚡ Tweaks">
+
+            <TabItem Header="[3] Tweaks">
                 <Grid Background="#FF1E1E1E">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -629,69 +596,60 @@ function Show-MainWindow {
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
-                    
-                    <TextBlock Grid.Row="0" Text="Automated Gaming Optimizations" 
+                    <TextBlock Grid.Row="0" Text="Automated Gaming Optimizations"
                               FontSize="18" FontWeight="Bold" Foreground="#FF007ACC" Margin="10"/>
-                    
-                    <!-- Warning Section -->
                     <Border Grid.Row="1" Background="#FFFF6B00" CornerRadius="5" Padding="15" Margin="10">
                         <StackPanel>
-                            <TextBlock Text="⚠️ WARNING" FontSize="16" FontWeight="Bold" Foreground="White"/>
+                            <TextBlock Text="WARNING" FontSize="16" FontWeight="Bold" Foreground="White"/>
                             <TextBlock TextWrapping="Wrap" Foreground="White" Margin="0,5,0,0">
                                 <Run Text="This will make SIGNIFICANT system changes including:"/>
                                 <LineBreak/>
-                                <Run Text="• Disable Windows services (Search, Xbox, telemetry)"/>
+                                <Run Text="  - Disable Windows services (Search, Xbox, telemetry)"/>
                                 <LineBreak/>
-                                <Run Text="• Modify power settings and visual effects"/>
+                                <Run Text="  - Modify power settings and visual effects"/>
                                 <LineBreak/>
-                                <Run Text="• Optimize network and GPU settings"/>
+                                <Run Text="  - Optimize network and GPU settings"/>
                                 <LineBreak/>
-                                <Run Text="• Require system restart for full effect"/>
+                                <Run Text="  - Require system restart for full effect"/>
                                 <LineBreak/>
                                 <LineBreak/>
                                 <Run Text="A restore point will be created automatically."/>
                             </TextBlock>
                         </StackPanel>
                     </Border>
-                    
-                    <!-- Progress and Log Section -->
                     <Grid Grid.Row="2" Margin="10">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
-                        
                         <StackPanel Grid.Row="0" Margin="0,0,0,10">
                             <TextBlock Name="ProgressText" Text="Ready to optimize..." Foreground="White" FontSize="14" Margin="0,0,0,5"/>
                             <ProgressBar Name="OptimizationProgress" Height="25" Background="#FF2D2D30" Foreground="#FF007ACC" BorderBrush="#FF007ACC"/>
                         </StackPanel>
-                        
                         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-                            <TextBox Name="LogTextBox" 
-                                    Background="#FF2D2D30" 
-                                    Foreground="#FF00FF00" 
-                                    FontFamily="Consolas" 
+                            <TextBox Name="LogTextBox"
+                                    Background="#FF2D2D30"
+                                    Foreground="#FF00FF00"
+                                    FontFamily="Courier New"
                                     FontSize="11"
-                                    IsReadOnly="True" 
-                                    TextWrapping="Wrap" 
+                                    IsReadOnly="True"
+                                    TextWrapping="Wrap"
                                     BorderThickness="1"
                                     BorderBrush="#FF007ACC"
                                     Padding="10"/>
                         </ScrollViewer>
                     </Grid>
-                    
                     <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Center" Margin="10">
-                        <Button Name="RunTweaksBtn" Content="🚀 RUN OPTIMIZATIONS" Width="200" Height="40" FontSize="16" FontWeight="Bold" Margin="0,0,10,0"/>
-                        <Button Name="RestartBtn" Content="🔄 Restart System" Width="150" Height="40" IsEnabled="False"/>
+                        <Button Name="RunTweaksBtn" Content="RUN OPTIMIZATIONS" Width="200" Height="40" FontSize="16" FontWeight="Bold" Margin="0,0,10,0"/>
+                        <Button Name="RestartBtn" Content="Restart System" Width="150" Height="40" IsEnabled="False"/>
                     </StackPanel>
                 </Grid>
             </TabItem>
-            
+
         </TabControl>
-        
-        <!-- Footer -->
+
         <Border Grid.Row="2" Background="#FF2D2D30" CornerRadius="5" Padding="10" Margin="0,10,0,0">
-            <TextBlock Text="Gaming Optimizer v2.0 | Created for Windows 11 | Use at your own risk" 
+            <TextBlock Text="Gaming Optimizer v2.0 | Created for Windows 11 | Use at your own risk"
                       FontSize="10" Foreground="Gray" HorizontalAlignment="Center"/>
         </Border>
     </Grid>
@@ -701,30 +659,23 @@ function Show-MainWindow {
     $reader = New-Object System.Xml.XmlNodeReader $xaml
     $window = [Windows.Markup.XamlReader]::Load($reader)
     
-    # Get controls
-    $systemInfoText = $window.FindName("SystemInfoText")
-    $instructionsTextBox = $window.FindName("InstructionsTextBox")
-    $copyInstructionsBtn = $window.FindName("CopyInstructionsBtn")
-    $refreshHardwareBtn = $window.FindName("RefreshHardwareBtn")
-    $restorePointsGrid = $window.FindName("RestorePointsGrid")
-    $createRestorePointBtn = $window.FindName("CreateRestorePointBtn")
+    $systemInfoText       = $window.FindName("SystemInfoText")
+    $instructionsTextBox  = $window.FindName("InstructionsTextBox")
+    $copyInstructionsBtn  = $window.FindName("CopyInstructionsBtn")
+    $refreshHardwareBtn   = $window.FindName("RefreshHardwareBtn")
+    $restorePointsGrid    = $window.FindName("RestorePointsGrid")
+    $createRestorePointBtn= $window.FindName("CreateRestorePointBtn")
     $refreshRestorePointsBtn = $window.FindName("RefreshRestorePointsBtn")
-    $runTweaksBtn = $window.FindName("RunTweaksBtn")
-    $restartBtn = $window.FindName("RestartBtn")
-    $progressText = $window.FindName("ProgressText")
+    $runTweaksBtn         = $window.FindName("RunTweaksBtn")
+    $restartBtn           = $window.FindName("RestartBtn")
+    $progressText         = $window.FindName("ProgressText")
     $optimizationProgress = $window.FindName("OptimizationProgress")
-    $logTextBox = $window.FindName("LogTextBox")
+    $logTextBox           = $window.FindName("LogTextBox")
     
-    # Update system info
     $systemInfoText.Text = "CPU: $($Global:DetectedHardware.CPU.Name) | GPU: $($Global:DetectedHardware.GPU.Name) | RAM: $($Global:DetectedHardware.RAM.TotalGB)GB"
-    
-    # Load instructions
     $instructionsTextBox.Text = Get-BIOSInstructions -hardware $Global:DetectedHardware
-    
-    # Load restore points
     $restorePointsGrid.ItemsSource = Get-RestorePoints
     
-    # Event Handlers
     $copyInstructionsBtn.Add_Click({
         [System.Windows.Clipboard]::SetText($instructionsTextBox.Text)
         [System.Windows.MessageBox]::Show("Instructions copied to clipboard!", "Success", "OK", "Information")
@@ -752,7 +703,7 @@ function Show-MainWindow {
     })
     
     $runTweaksBtn.Add_Click({
-        $result = [System.Windows.MessageBox]::Show("Are you sure you want to run all optimizations?`n`nThis will:`n• Create a restore point`n• Modify system settings`n• Require a restart`n`nClick YES to continue.", "Confirm Optimization", "YesNo", "Warning")
+        $result = [System.Windows.MessageBox]::Show("Are you sure you want to run all optimizations?`n`nThis will:`n- Create a restore point`n- Modify system settings`n- Require a restart`n`nClick YES to continue.", "Confirm Optimization", "YesNo", "Warning")
         
         if ($result -eq "Yes") {
             $runTweaksBtn.IsEnabled = $false
@@ -769,7 +720,6 @@ function Show-MainWindow {
                 })
             }
             
-            # Run in background
             $runspace = [runspacefactory]::CreateRunspace()
             $runspace.Open()
             $runspace.SessionStateProxy.SetVariable("progressCallback", $progressCallback)
@@ -783,7 +733,6 @@ function Show-MainWindow {
             
             $asyncResult = $powershell.BeginInvoke()
             
-            # Monitor completion
             $timer = New-Object System.Windows.Threading.DispatcherTimer
             $timer.Interval = [TimeSpan]::FromMilliseconds(500)
             $timer.Add_Tick({
@@ -792,9 +741,8 @@ function Show-MainWindow {
                     $powershell.EndInvoke($asyncResult)
                     $powershell.Dispose()
                     $runspace.Close()
-                    
                     $window.Dispatcher.Invoke([Action]{
-                        $progressText.Text = "✓ Optimization Complete!"
+                        $progressText.Text = "Optimization Complete!"
                         $restartBtn.IsEnabled = $true
                         $runTweaksBtn.IsEnabled = $true
                         [System.Windows.MessageBox]::Show("Optimization complete!`n`nPlease restart your system for all changes to take effect.", "Success", "OK", "Information")
@@ -807,9 +755,7 @@ function Show-MainWindow {
     
     $restartBtn.Add_Click({
         $result = [System.Windows.MessageBox]::Show("Restart system now?", "Restart", "YesNo", "Question")
-        if ($result -eq "Yes") {
-            Restart-Computer -Force
-        }
+        if ($result -eq "Yes") { Restart-Computer -Force }
     })
     
     $window.ShowDialog() | Out-Null
@@ -819,7 +765,6 @@ function Show-MainWindow {
 
 # Main Execution
 try {
-    # Check if running as admin
     $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
     $isAdmin = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
     
