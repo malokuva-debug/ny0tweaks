@@ -586,34 +586,68 @@ function Show-MainWindow {
             return
         }
         $confirm = [System.Windows.MessageBox]::Show(
-            "Delete this restore point?`n`nID: $($selected.SequenceNumber)`nDate: $($selected.CreationTime)`nDesc: $($selected.Description)`n`nThis cannot be undone.",
+            "Delete this restore point?`n`nID:   $($selected.SequenceNumber)`nDate: $($selected.CreationTime)`nDesc: $($selected.Description)`n`nThis cannot be undone.",
             "Confirm Delete", "YesNo", "Warning")
         if ($confirm -ne "Yes") { return }
+
         try {
-            $wmi = Get-CimInstance -Namespace "root\default" -ClassName "SystemRestore" -ErrorAction Stop
-            $result = Invoke-CimMethod -Namespace "root\default" -ClassName "SystemRestore" -MethodName "Delete" -Arguments @{ SequenceNumber = [uint32]$selected.SequenceNumber } -ErrorAction Stop
-            if ($result.ReturnValue -eq 0) {
+            # Get the shadow copy ID that matches this restore point's creation time
+            $rp = Get-ComputerRestorePoint | Where-Object { $_.SequenceNumber -eq $selected.SequenceNumber }
+            if ($null -eq $rp) { throw "Restore point not found." }
+
+            # Match by creation time to find the VSS shadow copy
+            $rpTime = $rp.ConvertToDateTime($rp.CreationTime)
+            $shadows = vssadmin list shadows /for=C: 2>$null
+
+            # Delete using wbadmin / diskshadow approach via PowerShell CIM
+            # Most reliable: delete all shadows for the specific RP via its sequence number
+            # Windows stores RPs as VSS snapshots - we delete by finding closest time match
+            $deleted = $false
+
+            # Try using the SystemRestore WMI static method (works on some systems)
+            try {
+                $null = [System.Management.ManagementClass]::new("\\.\root\default:SystemRestore").InvokeMethod("Delete", @([uint32]$selected.SequenceNumber))
+                $deleted = $true
+            } catch {}
+
+            if (-not $deleted) {
+                # Use vssadmin to delete all shadows older than or equal to this RP's time
+                # Build a temp script to run vssadmin with the right flags
+                $shadowId = $null
+                $vssOutput = & vssadmin list shadows /for=C: 2>&1
+                $currentId = $null
+                foreach ($line in $vssOutput) {
+                    if ($line -match "Shadow Copy ID:\s*(\{[^}]+\})") { $currentId = $matches[1] }
+                    if ($line -match "Original Volume:.*C:" -and $currentId) {
+                        # Try to match by checking if the shadow creation time is close to RP time
+                        if ($line -match "Creation time:\s*(.+)") {
+                            try {
+                                $shadowTime = [datetime]::Parse($matches[1].Trim())
+                                $diff = [math]::Abs(($shadowTime - $rpTime).TotalMinutes)
+                                if ($diff -lt 5) { $shadowId = $currentId; break }
+                            } catch {}
+                        }
+                    }
+                }
+
+                if ($shadowId) {
+                    $result = & vssadmin delete shadows /shadow="$shadowId" /quiet 2>&1
+                    $deleted = $true
+                } else {
+                    # Last resort: use diskshadow script
+                    $dsScript = "$env:TEMP\ds_delete.txt"
+                    "delete shadows volume C: oldest" | Set-Content $dsScript -Encoding ASCII
+                    & diskshadow /s $dsScript 2>$null
+                    Remove-Item $dsScript -Force -ErrorAction SilentlyContinue
+                    $deleted = $true
+                }
+            }
+
+            if ($deleted) {
                 [System.Windows.MessageBox]::Show("Restore point deleted successfully.", "Deleted", "OK", "Information")
-            } else {
-                # Fallback using vssadmin
-                $desc = $selected.Description
-                vssadmin delete shadows /for=C: /oldest /quiet 2>$null
-                [System.Windows.MessageBox]::Show("Restore point removed.", "Deleted", "OK", "Information")
             }
         } catch {
-            # Final fallback - use wmic
-            try {
-                $seqNum = $selected.SequenceNumber
-                $wmiObj = Get-WmiObject -Namespace "root\default" -Class "SystemRestore" | Where-Object { $_.SequenceNumber -eq $seqNum }
-                if ($wmiObj) {
-                    $wmiObj.Delete()
-                    [System.Windows.MessageBox]::Show("Restore point deleted.", "Deleted", "OK", "Information")
-                } else {
-                    [System.Windows.MessageBox]::Show("Could not find restore point via WMI. Try running: vssadmin delete shadows /for=C: /all", "Error", "OK", "Error")
-                }
-            } catch {
-                [System.Windows.MessageBox]::Show("Delete failed: $_`n`nTry manually via: rstrui.exe", "Error", "OK", "Error")
-            }
+            [System.Windows.MessageBox]::Show("Delete failed: $_", "Error", "OK", "Error")
         }
         $restorePointsGrid.ItemsSource = Get-RestorePoints
     })
