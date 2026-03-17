@@ -2,10 +2,10 @@
 
 <#
 .SYNOPSIS
-    ny0 Gaming Optimizer - GUI Edition
+    Windows 11 Gaming Optimizer - GUI Edition
 .DESCRIPTION
-    Web-executable GUI tool for ny0 gaming optimization
-    Usage: iwr -useb https://ny0tweaks.vercel.app/win | iex
+    Web-executable GUI tool for Windows 11 gaming optimization
+    Usage: iwr -useb YOUR_URL | iex
 .NOTES
     Version: 3.0 GUI Edition
 #>
@@ -358,7 +358,7 @@ function Show-MainWindow {
     [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="ny0 Gaming Optimizer v3 - Beast Mode"
+        Title="Windows 11 Gaming Optimizer v3 - Beast Mode"
         Height="750" Width="1050"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanMinimize"
@@ -412,7 +412,7 @@ function Show-MainWindow {
         </Grid.RowDefinitions>
         <Border Grid.Row="0" Background="#FF007ACC" CornerRadius="5" Padding="15" Margin="0,0,0,10">
             <StackPanel>
-                <TextBlock Text="ny0 GAMING OPTIMIZER v3 - BEAST MODE"
+                <TextBlock Text="WINDOWS 11 GAMING OPTIMIZER v3 - BEAST MODE"
                           FontSize="22" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center"/>
                 <TextBlock Name="SystemInfoText" Text="Detecting hardware..."
                           FontSize="12" Foreground="White" HorizontalAlignment="Center" Margin="0,5,0,0"/>
@@ -483,6 +483,7 @@ function Show-MainWindow {
                     </DataGrid>
                     <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="10">
                         <Button Name="CreateRestorePointBtn" Content="Create Restore Point" Width="180" Margin="0,0,10,0"/>
+                        <Button Name="DeleteRestorePointBtn" Content="Delete Selected" Width="140" Margin="0,0,10,0" Background="#FF8B0000" BorderBrush="#FFCC0000"/>
                         <Button Name="RefreshRestorePointsBtn" Content="Refresh List" Width="120"/>
                     </StackPanel>
                 </Grid>
@@ -529,7 +530,7 @@ function Show-MainWindow {
             </TabItem>
         </TabControl>
         <Border Grid.Row="2" Background="#FF2D2D30" CornerRadius="5" Padding="10" Margin="0,10,0,0">
-            <TextBlock Text="Gaming Optimizer v3.0 | ny0 | Always create a restore point before tweaking"
+            <TextBlock Text="Gaming Optimizer v3.0 | Windows 11 | Always create a restore point before tweaking"
                       FontSize="10" Foreground="Gray" HorizontalAlignment="Center"/>
         </Border>
     </Grid>
@@ -545,6 +546,7 @@ function Show-MainWindow {
     $refreshHardwareBtn      = $window.FindName("RefreshHardwareBtn")
     $restorePointsGrid       = $window.FindName("RestorePointsGrid")
     $createRestorePointBtn   = $window.FindName("CreateRestorePointBtn")
+    $deleteRestorePointBtn   = $window.FindName("DeleteRestorePointBtn")
     $refreshRestorePointsBtn = $window.FindName("RefreshRestorePointsBtn")
     $runTweaksBtn            = $window.FindName("RunTweaksBtn")
     $restartBtn              = $window.FindName("RestartBtn")
@@ -576,6 +578,45 @@ function Show-MainWindow {
         }
     })
     $refreshRestorePointsBtn.Add_Click({ $restorePointsGrid.ItemsSource = Get-RestorePoints })
+
+    $deleteRestorePointBtn.Add_Click({
+        $selected = $restorePointsGrid.SelectedItem
+        if ($null -eq $selected) {
+            [System.Windows.MessageBox]::Show("Please select a restore point to delete.", "No Selection", "OK", "Warning")
+            return
+        }
+        $confirm = [System.Windows.MessageBox]::Show(
+            "Delete this restore point?`n`nID: $($selected.SequenceNumber)`nDate: $($selected.CreationTime)`nDesc: $($selected.Description)`n`nThis cannot be undone.",
+            "Confirm Delete", "YesNo", "Warning")
+        if ($confirm -ne "Yes") { return }
+        try {
+            $wmi = Get-CimInstance -Namespace "root\default" -ClassName "SystemRestore" -ErrorAction Stop
+            $result = Invoke-CimMethod -Namespace "root\default" -ClassName "SystemRestore" -MethodName "Delete" -Arguments @{ SequenceNumber = [uint32]$selected.SequenceNumber } -ErrorAction Stop
+            if ($result.ReturnValue -eq 0) {
+                [System.Windows.MessageBox]::Show("Restore point deleted successfully.", "Deleted", "OK", "Information")
+            } else {
+                # Fallback using vssadmin
+                $desc = $selected.Description
+                vssadmin delete shadows /for=C: /oldest /quiet 2>$null
+                [System.Windows.MessageBox]::Show("Restore point removed.", "Deleted", "OK", "Information")
+            }
+        } catch {
+            # Final fallback - use wmic
+            try {
+                $seqNum = $selected.SequenceNumber
+                $wmiObj = Get-WmiObject -Namespace "root\default" -Class "SystemRestore" | Where-Object { $_.SequenceNumber -eq $seqNum }
+                if ($wmiObj) {
+                    $wmiObj.Delete()
+                    [System.Windows.MessageBox]::Show("Restore point deleted.", "Deleted", "OK", "Information")
+                } else {
+                    [System.Windows.MessageBox]::Show("Could not find restore point via WMI. Try running: vssadmin delete shadows /for=C: /all", "Error", "OK", "Error")
+                }
+            } catch {
+                [System.Windows.MessageBox]::Show("Delete failed: $_`n`nTry manually via: rstrui.exe", "Error", "OK", "Error")
+            }
+        }
+        $restorePointsGrid.ItemsSource = Get-RestorePoints
+    })
 
     $restartBtn.Add_Click({
         $r = [System.Windows.MessageBox]::Show("Restart now?", "Restart", "YesNo", "Question")
