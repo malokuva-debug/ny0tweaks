@@ -5,7 +5,7 @@
     ny0 Gaming Optimizer - GUI Edition
 .DESCRIPTION
     Web-executable GUI tool for ny0 gaming optimization
-    Usage: iwr -useb YOUR_URL | iex
+    Usage: iwr -useb https://ny0tweaks.vercel.app/win | iex
 .NOTES
     Version: 3.0 GUI Edition
 #>
@@ -334,18 +334,28 @@ function Step-TempFiles {
 #region Restore Points
 
 function Get-RestorePoints {
+    $list = New-Object System.Collections.ObjectModel.ObservableCollection[object]
     try {
-        return Get-ComputerRestorePoint | Select-Object -Property SequenceNumber,
-            @{Name='CreationTime';Expression={$_.ConvertToDateTime($_.CreationTime)}},
-            Description,
-            @{Name='Type';Expression={
-                switch ($_.RestorePointType) {
-                    0 { "App Install" } 1 { "App Uninstall" }
-                    10 { "Driver Install" } 12 { "Modify Settings" }
-                    13 { "Cancelled" } default { "Other" }
-                }
-            }}
-    } catch { return @() }
+        $points = Get-ComputerRestorePoint -ErrorAction Stop
+        foreach ($rp in $points) {
+            $typeStr = switch ($rp.RestorePointType) {
+                0  { "App Install" }
+                1  { "App Uninstall" }
+                10 { "Driver Install" }
+                12 { "Modify Settings" }
+                13 { "Cancelled" }
+                default { "Other" }
+            }
+            $obj = New-Object PSObject -Property ([ordered]@{
+                SequenceNumber = [int]$rp.SequenceNumber
+                CreationTime   = $rp.ConvertToDateTime($rp.CreationTime).ToString("yyyy-MM-dd HH:mm:ss")
+                Description    = [string]$rp.Description
+                Type           = [string]$typeStr
+            })
+            $list.Add($obj) | Out-Null
+        }
+    } catch {}
+    return ,$list
 }
 
 #endregion
