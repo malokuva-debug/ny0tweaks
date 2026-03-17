@@ -216,7 +216,7 @@ function Get-BIOSInstructions {
             $instructions += "✓ A-XMP: ENABLED`n"
             $instructions += "✓ Memory Fast Boot: ENABLED`n"
         }
-        "*Gigabyte*" -or "*AORUS*" {
+        { $_ -like "*Gigabyte*" -or $_ -like "*AORUS*" } {
             $instructions += "Location: M.I.T. (Motherboard Intelligent Tweaker)`n"
             $instructions += "✓ Performance Boost: Turbo`n"
             $instructions += "✓ Extreme Memory Profile (XMP): Profile 1`n"
