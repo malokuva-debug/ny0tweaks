@@ -2,12 +2,12 @@
 
 <#
 .SYNOPSIS
-    ny0 Gaming Optimizer - GUI Edition
+    Windows 11 Gaming Optimizer - GUI Edition
 .DESCRIPTION
-    Web-executable GUI tool for ny0 gaming optimization
-    Usage: iwr -useb https://ny0tweaks.vercel.app/win | iex
+    Web-executable GUI tool for Windows 11 gaming optimization
+    Usage: iwr -useb YOUR_URL | iex
 .NOTES
-    Version: 2.0 GUI Edition
+    Version: 3.0 GUI Edition
 #>
 
 Add-Type -AssemblyName PresentationFramework
@@ -42,10 +42,7 @@ function Get-SystemInfo {
         }
         $ram = Get-CimInstance -ClassName Win32_PhysicalMemory
         $totalRAM = ($ram | Measure-Object -Property Capacity -Sum).Sum
-        $hwInfo.RAM = @{
-            TotalGB = [math]::Round($totalRAM / 1GB, 2)
-            Speed = ($ram | Select-Object -First 1).Speed
-        }
+        $hwInfo.RAM = @{ TotalGB = [math]::Round($totalRAM / 1GB, 2); Speed = ($ram | Select-Object -First 1).Speed }
         $mobo = Get-CimInstance -ClassName Win32_BaseBoard
         $hwInfo.Motherboard = @{ Manufacturer = $mobo.Manufacturer; Product = $mobo.Product }
         $storage = Get-PhysicalDisk
@@ -178,13 +175,14 @@ function Get-BIOSInstructions {
         $instructions += "[+] Power Management Mode: Prefer Maximum Performance`n"
         $instructions += "[+] Texture Filtering Quality: Performance`n"
         $instructions += "[+] Low Latency Mode: Ultra (if supported)`n"
+        $instructions += "[+] Shader Cache Size: 10GB`n"
         $instructions += "[+] Max Frame Rate: Off or Monitor refresh + 3`n"
         $instructions += "[+] Vertical Sync: Use game settings`n"
     } elseif ($gpuMfg -eq "AMD") {
         $instructions += "AMD Radeon Software -> Gaming -> Graphics:`n"
         $instructions += "[+] Radeon Anti-Lag: Enabled`n"
         $instructions += "[+] Radeon Boost: Enabled (if acceptable)`n"
-        $instructions += "[+] Radeon Chill: Disabled or match refresh rate`n"
+        $instructions += "[+] Radeon Chill: Disabled`n"
         $instructions += "[+] Texture Filtering Quality: Performance`n"
     } elseif ($gpuMfg -eq "Intel") {
         $instructions += "Intel Arc Control:`n"
@@ -196,33 +194,30 @@ function Get-BIOSInstructions {
 
 #endregion
 
-#region Optimization Steps (all defined as named functions so runspace can use them)
+#region All Optimization Step Functions
 
 function Step-CreateRestorePoint {
     Enable-ComputerRestore -Drive "C:\" -ErrorAction SilentlyContinue
-    Checkpoint-Computer -Description "Gaming Optimizer - $(Get-Date -Format 'yyyy-MM-dd HH:mm')" -RestorePointType "MODIFY_SETTINGS" -ErrorAction Stop
+    Checkpoint-Computer -Description "Gaming Optimizer v3 - $(Get-Date -Format 'yyyy-MM-dd HH:mm')" -RestorePointType "MODIFY_SETTINGS" -ErrorAction Stop
 }
-
 function Step-DisableServices {
-    $services = @("DiagTrack","dmwappushservice","SysMain","WSearch","TabletInputService","wisvc","RetailDemo","Fax","MapsBroker","lfsvc")
+    $services = @("DiagTrack","dmwappushservice","SysMain","WSearch","TabletInputService","wisvc","RetailDemo","Fax","MapsBroker","lfsvc","XblAuthManager","XblGameSave","XboxGipSvc","XboxNetApiSvc","PcaSvc","RemoteRegistry")
     foreach ($s in $services) {
-        try {
-            Stop-Service -Name $s -Force -ErrorAction SilentlyContinue
-            Set-Service -Name $s -StartupType Disabled -ErrorAction SilentlyContinue
-        } catch {}
+        try { Stop-Service -Name $s -Force -ErrorAction SilentlyContinue; Set-Service -Name $s -StartupType Disabled -ErrorAction SilentlyContinue } catch {}
     }
 }
-
 function Step-PowerSettings {
     $guid = "e9a42b02-d5df-448d-aa00-03f14749eb61"
-    powercfg -duplicatescheme $guid 2>$null
-    powercfg -setactive $guid 2>$null
-    powercfg -change -monitor-timeout-ac 0
-    powercfg -change -disk-timeout-ac 0
-    powercfg -change -standby-timeout-ac 0
+    powercfg -duplicatescheme $guid 2>$null; powercfg -setactive $guid 2>$null
+    powercfg -change -monitor-timeout-ac 0; powercfg -change -disk-timeout-ac 0; powercfg -change -standby-timeout-ac 0
+    powercfg -setacvalueindex SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 be337238-0d82-4146-a960-4f3749d470c7 100
     powercfg -setactive SCHEME_CURRENT
 }
-
+function Step-DisablePowerThrottling {
+    $k = "HKLM:\SYSTEM\CurrentControlSet\Control\Power\PowerThrottling"
+    if (!(Test-Path $k)) { New-Item -Path $k -Force | Out-Null }
+    Set-ItemProperty -Path $k -Name "PowerThrottlingOff" -Type DWord -Value 1
+}
 function Step-GameDVR {
     $k1 = "HKCU:\Software\Microsoft\Windows\CurrentVersion\GameDVR"
     $k2 = "HKCU:\System\GameConfigStore"
@@ -231,56 +226,104 @@ function Step-GameDVR {
     Set-ItemProperty -Path $k1 -Name "AppCaptureEnabled" -Type DWord -Value 0
     Set-ItemProperty -Path $k2 -Name "GameDVR_Enabled" -Type DWord -Value 0
 }
-
 function Step-VisualEffects {
     Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" -Name "VisualFXSetting" -Type DWord -Value 2 -ErrorAction SilentlyContinue
     Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" -Name "EnableTransparency" -Type DWord -Value 0 -ErrorAction SilentlyContinue
 }
-
 function Step-Network {
     netsh interface tcp set global autotuninglevel=normal 2>$null
     netsh interface tcp set global congestionprovider=ctcp 2>$null
     netsh interface tcp set heuristics disabled 2>$null
+    netsh interface tcp set global rss=enabled 2>$null
+    netsh interface tcp set global nonsackrttresiliency=disabled 2>$null
+    $k = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile"
+    Set-ItemProperty -Path $k -Name "NetworkThrottlingIndex" -Type DWord -Value 0xffffffff -ErrorAction SilentlyContinue
 }
-
 function Step-BackgroundApps {
     $k = "HKCU:\Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications"
     if (!(Test-Path $k)) { New-Item -Path $k -Force | Out-Null }
     Set-ItemProperty -Path $k -Name "GlobalUserDisabled" -Type DWord -Value 1
 }
-
 function Step-GPUScheduling {
     $k = "HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers"
     if (!(Test-Path $k)) { New-Item -Path $k -Force | Out-Null }
     Set-ItemProperty -Path $k -Name "HwSchMode" -Type DWord -Value 2
 }
-
 function Step-GameMode {
     $k = "HKCU:\Software\Microsoft\GameBar"
     if (!(Test-Path $k)) { New-Item -Path $k -Force | Out-Null }
     Set-ItemProperty -Path $k -Name "AutoGameModeEnabled" -Type DWord -Value 1
+    Set-ItemProperty -Path $k -Name "AllowAutoGameMode" -Type DWord -Value 1
 }
-
 function Step-Mouse {
     Set-ItemProperty -Path "HKCU:\Control Panel\Mouse" -Name "MouseSpeed" -Value "0"
     Set-ItemProperty -Path "HKCU:\Control Panel\Mouse" -Name "MouseThreshold1" -Value "0"
     Set-ItemProperty -Path "HKCU:\Control Panel\Mouse" -Name "MouseThreshold2" -Value "0"
 }
-
 function Step-FSO {
     $k = "HKCU:\System\GameConfigStore"
     if (!(Test-Path $k)) { New-Item -Path $k -Force | Out-Null }
     Set-ItemProperty -Path $k -Name "GameDVR_FSEBehaviorMode" -Type DWord -Value 2
     Set-ItemProperty -Path $k -Name "GameDVR_DXGIHonorFSEWindowsCompatible" -Type DWord -Value 1
+    Set-ItemProperty -Path $k -Name "GameDVR_HonorUserFSEBehaviorMode" -Type DWord -Value 1
 }
-
+function Step-GamePriority {
+    $k = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games"
+    if (!(Test-Path $k)) { New-Item -Path $k -Force | Out-Null }
+    Set-ItemProperty -Path $k -Name "Affinity" -Type DWord -Value 0
+    Set-ItemProperty -Path $k -Name "Background Only" -Type String -Value "False"
+    Set-ItemProperty -Path $k -Name "Clock Rate" -Type DWord -Value 10000
+    Set-ItemProperty -Path $k -Name "GPU Priority" -Type DWord -Value 8
+    Set-ItemProperty -Path $k -Name "Priority" -Type DWord -Value 6
+    Set-ItemProperty -Path $k -Name "Scheduling Category" -Type String -Value "High"
+    Set-ItemProperty -Path $k -Name "SFIO Rate" -Type String -Value "High"
+    $kp = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile"
+    Set-ItemProperty -Path $kp -Name "SystemResponsiveness" -Type DWord -Value 10
+}
+function Step-DisableDynamicTick {
+    bcdedit /set disabledynamictick yes 2>$null
+}
+function Step-Win32Priority {
+    Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\PriorityControl" -Name "Win32PrioritySeparation" -Type DWord -Value 38
+}
+function Step-DisableCoreParking {
+    $k = "HKLM:\SYSTEM\CurrentControlSet\Control\Power\PowerSettings\54533251-82be-4824-96c1-47b60b740d00\0cc5b647-c1df-4637-891a-dec35c318583"
+    if (Test-Path $k) { Set-ItemProperty -Path $k -Name "Attributes" -Type DWord -Value 0 }
+    powercfg -setacvalueindex SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 0cc5b647-c1df-4637-891a-dec35c318583 0 2>$null
+    powercfg -setactive SCHEME_CURRENT 2>$null
+}
+function Step-DisableStartupDelay {
+    $k = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Serialize"
+    if (!(Test-Path $k)) { New-Item -Path $k -Force | Out-Null }
+    Set-ItemProperty -Path $k -Name "StartupDelayInMSec" -Type DWord -Value 0
+}
+function Step-MemoryManagement {
+    $k = "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management"
+    Set-ItemProperty -Path $k -Name "DisablePagingExecutive" -Type DWord -Value 1 -ErrorAction SilentlyContinue
+    Set-ItemProperty -Path $k -Name "LargeSystemCache" -Type DWord -Value 0 -ErrorAction SilentlyContinue
+}
 function Step-WindowsUpdate {
     $k = "HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings"
     if (!(Test-Path $k)) { New-Item -Path $k -Force | Out-Null }
     Set-ItemProperty -Path $k -Name "ActiveHoursStart" -Type DWord -Value 8 -ErrorAction SilentlyContinue
     Set-ItemProperty -Path $k -Name "ActiveHoursEnd" -Type DWord -Value 23 -ErrorAction SilentlyContinue
 }
-
+function Step-DisableSearchIndexing {
+    try { Stop-Service -Name "WSearch" -Force -ErrorAction SilentlyContinue; Set-Service -Name "WSearch" -StartupType Disabled -ErrorAction SilentlyContinue } catch {}
+}
+function Step-DisableTelemetry {
+    $k = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection"
+    if (!(Test-Path $k)) { New-Item -Path $k -Force | Out-Null }
+    Set-ItemProperty -Path $k -Name "AllowTelemetry" -Type DWord -Value 0
+    $k2 = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\DataCollection"
+    if (!(Test-Path $k2)) { New-Item -Path $k2 -Force | Out-Null }
+    Set-ItemProperty -Path $k2 -Name "AllowTelemetry" -Type DWord -Value 0
+}
+function Step-DisableDeliveryOptimization {
+    $k = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization"
+    if (!(Test-Path $k)) { New-Item -Path $k -Force | Out-Null }
+    Set-ItemProperty -Path $k -Name "DODownloadMode" -Type DWord -Value 0
+}
 function Step-TempFiles {
     Remove-Item -Path "$env:TEMP\*" -Recurse -Force -ErrorAction SilentlyContinue
     Remove-Item -Path "C:\Windows\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue
@@ -297,9 +340,9 @@ function Get-RestorePoints {
             Description,
             @{Name='Type';Expression={
                 switch ($_.RestorePointType) {
-                    0 { "Application Install" } 1 { "Application Uninstall" }
-                    10 { "Device Driver Install" } 12 { "Modify Settings" }
-                    13 { "Cancelled Operation" } default { "Other" }
+                    0 { "App Install" } 1 { "App Uninstall" }
+                    10 { "Driver Install" } 12 { "Modify Settings" }
+                    13 { "Cancelled" } default { "Other" }
                 }
             }}
     } catch { return @() }
@@ -315,8 +358,8 @@ function Show-MainWindow {
     [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="ny0 Gaming Optimizer - Beast Mode"
-        Height="700" Width="1000"
+        Title="Windows 11 Gaming Optimizer v3 - Beast Mode"
+        Height="750" Width="1050"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanMinimize"
         Background="#FF1E1E1E">
@@ -332,6 +375,9 @@ function Show-MainWindow {
             <Style.Triggers>
                 <Trigger Property="IsMouseOver" Value="True">
                     <Setter Property="Background" Value="#FF007ACC"/>
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="0.4"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
@@ -366,8 +412,8 @@ function Show-MainWindow {
         </Grid.RowDefinitions>
         <Border Grid.Row="0" Background="#FF007ACC" CornerRadius="5" Padding="15" Margin="0,0,0,10">
             <StackPanel>
-                <TextBlock Text="ny0 GAMING OPTIMIZER - BEAST MODE"
-                          FontSize="24" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center"/>
+                <TextBlock Text="WINDOWS 11 GAMING OPTIMIZER v3 - BEAST MODE"
+                          FontSize="22" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center"/>
                 <TextBlock Name="SystemInfoText" Text="Detecting hardware..."
                           FontSize="12" Foreground="White" HorizontalAlignment="Center" Margin="0,5,0,0"/>
             </StackPanel>
@@ -413,7 +459,7 @@ function Show-MainWindow {
                             <DataGridTextColumn Header="ID" Binding="{Binding SequenceNumber}" Width="60"/>
                             <DataGridTextColumn Header="Date/Time" Binding="{Binding CreationTime}" Width="180"/>
                             <DataGridTextColumn Header="Description" Binding="{Binding Description}" Width="*"/>
-                            <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="150"/>
+                            <DataGridTextColumn Header="Type" Binding="{Binding Type}" Width="130"/>
                         </DataGrid.Columns>
                         <DataGrid.ColumnHeaderStyle>
                             <Style TargetType="DataGridColumnHeader">
@@ -449,25 +495,13 @@ function Show-MainWindow {
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
-                    <TextBlock Grid.Row="0" Text="Automated Gaming Optimizations"
+                    <TextBlock Grid.Row="0" Text="Automated Gaming Optimizations (20 Tweaks)"
                               FontSize="18" FontWeight="Bold" Foreground="#FF007ACC" Margin="10"/>
-                    <Border Grid.Row="1" Background="#FFFF6B00" CornerRadius="5" Padding="15" Margin="10">
-                        <StackPanel>
-                            <TextBlock Text="WARNING" FontSize="16" FontWeight="Bold" Foreground="White"/>
-                            <TextBlock TextWrapping="Wrap" Foreground="White" Margin="0,5,0,0">
-                                <Run Text="This will make SIGNIFICANT system changes including:"/>
-                                <LineBreak/>
-                                <Run Text="  - Disable Windows services (Search, Xbox, telemetry)"/>
-                                <LineBreak/>
-                                <Run Text="  - Modify power settings and visual effects"/>
-                                <LineBreak/>
-                                <Run Text="  - Optimize network and GPU settings"/>
-                                <LineBreak/>
-                                <Run Text="  - Require system restart for full effect"/>
-                                <LineBreak/><LineBreak/>
-                                <Run Text="A restore point will be created automatically."/>
-                            </TextBlock>
-                        </StackPanel>
+                    <Border Grid.Row="1" Background="#FFFF6B00" CornerRadius="5" Padding="12" Margin="10">
+                        <TextBlock TextWrapping="Wrap" Foreground="White" FontSize="12">
+                            <Run FontWeight="Bold" Text="WARNING: "/>
+                            <Run Text="Significant system changes will be applied: services disabled, registry modified, power plan changed, boot config updated. A restore point is created automatically. Restart required for full effect."/>
+                        </TextBlock>
                     </Border>
                     <Grid Grid.Row="2" Margin="10">
                         <Grid.RowDefinitions>
@@ -475,27 +509,27 @@ function Show-MainWindow {
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
                         <StackPanel Grid.Row="0" Margin="0,0,0,10">
-                            <TextBlock Name="ProgressText" Text="Ready to optimize..." Foreground="White" FontSize="14" Margin="0,0,0,5"/>
-                            <ProgressBar Name="OptimizationProgress" Height="25" Minimum="0" Maximum="100" Value="0"
+                            <TextBlock Name="ProgressText" Text="Ready to optimize..." Foreground="White" FontSize="13" Margin="0,0,0,5"/>
+                            <ProgressBar Name="OptimizationProgress" Height="22" Minimum="0" Maximum="100" Value="0"
                                         Background="#FF2D2D30" Foreground="#FF007ACC" BorderBrush="#FF007ACC"/>
                         </StackPanel>
                         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
                             <TextBox Name="LogTextBox"
-                                    Background="#FF2D2D30" Foreground="#FF00FF00"
+                                    Background="#FF1A1A1A" Foreground="#FF00FF00"
                                     FontFamily="Courier New" FontSize="11"
                                     IsReadOnly="True" TextWrapping="Wrap"
                                     BorderThickness="1" BorderBrush="#FF007ACC" Padding="10"/>
                         </ScrollViewer>
                     </Grid>
                     <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Center" Margin="10">
-                        <Button Name="RunTweaksBtn" Content="RUN OPTIMIZATIONS" Width="200" Height="40" FontSize="16" FontWeight="Bold" Margin="0,0,10,0"/>
-                        <Button Name="RestartBtn" Content="Restart System" Width="150" Height="40" IsEnabled="False"/>
+                        <Button Name="RunTweaksBtn" Content="RUN ALL 20 OPTIMIZATIONS" Width="220" Height="40" FontSize="15" FontWeight="Bold" Margin="0,0,10,0"/>
+                        <Button Name="RestartBtn" Content="Restart System" Width="150" Height="40"/>
                     </StackPanel>
                 </Grid>
             </TabItem>
         </TabControl>
         <Border Grid.Row="2" Background="#FF2D2D30" CornerRadius="5" Padding="10" Margin="0,10,0,0">
-            <TextBlock Text="Gaming Optimizer v2.0 | ny0 | Use at your own risk"
+            <TextBlock Text="Gaming Optimizer v3.0 | Windows 11 | Always create a restore point before tweaking"
                       FontSize="10" Foreground="Gray" HorizontalAlignment="Center"/>
         </Border>
     </Grid>
@@ -505,18 +539,18 @@ function Show-MainWindow {
     $reader = New-Object System.Xml.XmlNodeReader $xaml
     $window = [Windows.Markup.XamlReader]::Load($reader)
 
-    $systemInfoText       = $window.FindName("SystemInfoText")
-    $instructionsTextBox  = $window.FindName("InstructionsTextBox")
-    $copyInstructionsBtn  = $window.FindName("CopyInstructionsBtn")
-    $refreshHardwareBtn   = $window.FindName("RefreshHardwareBtn")
-    $restorePointsGrid    = $window.FindName("RestorePointsGrid")
+    $systemInfoText          = $window.FindName("SystemInfoText")
+    $instructionsTextBox     = $window.FindName("InstructionsTextBox")
+    $copyInstructionsBtn     = $window.FindName("CopyInstructionsBtn")
+    $refreshHardwareBtn      = $window.FindName("RefreshHardwareBtn")
+    $restorePointsGrid       = $window.FindName("RestorePointsGrid")
     $createRestorePointBtn   = $window.FindName("CreateRestorePointBtn")
     $refreshRestorePointsBtn = $window.FindName("RefreshRestorePointsBtn")
-    $runTweaksBtn         = $window.FindName("RunTweaksBtn")
-    $restartBtn           = $window.FindName("RestartBtn")
-    $progressText         = $window.FindName("ProgressText")
-    $optimizationProgress = $window.FindName("OptimizationProgress")
-    $logTextBox           = $window.FindName("LogTextBox")
+    $runTweaksBtn            = $window.FindName("RunTweaksBtn")
+    $restartBtn              = $window.FindName("RestartBtn")
+    $progressText            = $window.FindName("ProgressText")
+    $optimizationProgress    = $window.FindName("OptimizationProgress")
+    $logTextBox              = $window.FindName("LogTextBox")
 
     $systemInfoText.Text = "CPU: $($Global:DetectedHardware.CPU.Name) | GPU: $($Global:DetectedHardware.GPU.Name) | RAM: $($Global:DetectedHardware.RAM.TotalGB)GB"
     $instructionsTextBox.Text = Get-BIOSInstructions -hardware $Global:DetectedHardware
@@ -524,15 +558,13 @@ function Show-MainWindow {
 
     $copyInstructionsBtn.Add_Click({
         [System.Windows.Clipboard]::SetText($instructionsTextBox.Text)
-        [System.Windows.MessageBox]::Show("Instructions copied to clipboard!", "Success", "OK", "Information")
+        [System.Windows.MessageBox]::Show("Copied!", "Success", "OK", "Information")
     })
-
     $refreshHardwareBtn.Add_Click({
         $Global:DetectedHardware = Get-SystemInfo
         $systemInfoText.Text = "CPU: $($Global:DetectedHardware.CPU.Name) | GPU: $($Global:DetectedHardware.GPU.Name) | RAM: $($Global:DetectedHardware.RAM.TotalGB)GB"
         $instructionsTextBox.Text = Get-BIOSInstructions -hardware $Global:DetectedHardware
     })
-
     $createRestorePointBtn.Add_Click({
         try {
             Enable-ComputerRestore -Drive "C:\" -ErrorAction SilentlyContinue
@@ -543,111 +575,175 @@ function Show-MainWindow {
             [System.Windows.MessageBox]::Show("Failed: $_", "Error", "OK", "Error")
         }
     })
+    $refreshRestorePointsBtn.Add_Click({ $restorePointsGrid.ItemsSource = Get-RestorePoints })
 
-    $refreshRestorePointsBtn.Add_Click({
-        $restorePointsGrid.ItemsSource = Get-RestorePoints
+    $restartBtn.Add_Click({
+        $r = [System.Windows.MessageBox]::Show("Restart now?", "Restart", "YesNo", "Question")
+        if ($r -eq "Yes") { Restart-Computer -Force }
     })
 
     $runTweaksBtn.Add_Click({
         $confirm = [System.Windows.MessageBox]::Show(
-            "Run all optimizations?`n`n- Creates a restore point`n- Modifies system settings`n- Requires restart`n`nContinue?",
+            "Run all 20 optimizations?`n`n- Creates restore point`n- Modifies registry + services`n- Updates boot config`n- Requires restart`n`nContinue?",
             "Confirm", "YesNo", "Warning")
         if ($confirm -ne "Yes") { return }
 
         $runTweaksBtn.IsEnabled = $false
-        $restartBtn.IsEnabled   = $false
-        $logTextBox.Text        = ""
+        $logTextBox.Text = ""
         $optimizationProgress.Value = 0
         $Global:OptimizationLog = [System.Collections.ArrayList]::new()
 
-        # Define steps as name + scriptblock string pairs - passed into runspace as data
         $stepList = @(
-            @{ Name = "Creating Restore Point";           Func = "Step-CreateRestorePoint" },
-            @{ Name = "Disabling Unnecessary Services";   Func = "Step-DisableServices" },
-            @{ Name = "Optimizing Power Settings";        Func = "Step-PowerSettings" },
-            @{ Name = "Disabling Game DVR";               Func = "Step-GameDVR" },
-            @{ Name = "Optimizing Visual Effects";        Func = "Step-VisualEffects" },
-            @{ Name = "Optimizing Network Settings";      Func = "Step-Network" },
-            @{ Name = "Disabling Background Apps";        Func = "Step-BackgroundApps" },
-            @{ Name = "Enabling GPU Scheduling";          Func = "Step-GPUScheduling" },
-            @{ Name = "Enabling Game Mode";               Func = "Step-GameMode" },
-            @{ Name = "Optimizing Mouse Settings";        Func = "Step-Mouse" },
-            @{ Name = "Disabling Fullscreen Optimizations"; Func = "Step-FSO" },
-            @{ Name = "Configuring Windows Update";       Func = "Step-WindowsUpdate" },
-            @{ Name = "Cleaning Temp Files";              Func = "Step-TempFiles" }
+            @{ Name = "Creating Restore Point";            Func = "Step-CreateRestorePoint" },
+            @{ Name = "Disabling Unnecessary Services";    Func = "Step-DisableServices" },
+            @{ Name = "Optimizing Power Settings";         Func = "Step-PowerSettings" },
+            @{ Name = "Disabling Power Throttling";        Func = "Step-DisablePowerThrottling" },
+            @{ Name = "Disabling Game DVR / Capture";      Func = "Step-GameDVR" },
+            @{ Name = "Optimizing Visual Effects";         Func = "Step-VisualEffects" },
+            @{ Name = "Optimizing Network Settings";       Func = "Step-Network" },
+            @{ Name = "Disabling Background Apps";         Func = "Step-BackgroundApps" },
+            @{ Name = "Enabling GPU Hardware Scheduling";  Func = "Step-GPUScheduling" },
+            @{ Name = "Enabling Game Mode";                Func = "Step-GameMode" },
+            @{ Name = "Disabling Mouse Acceleration";      Func = "Step-Mouse" },
+            @{ Name = "Disabling Fullscreen Optimizations";Func = "Step-FSO" },
+            @{ Name = "Setting Game CPU/GPU Priority";     Func = "Step-GamePriority" },
+            @{ Name = "Disabling Dynamic Tick";            Func = "Step-DisableDynamicTick" },
+            @{ Name = "Setting Win32 Priority Separation"; Func = "Step-Win32Priority" },
+            @{ Name = "Disabling CPU Core Parking";        Func = "Step-DisableCoreParking" },
+            @{ Name = "Disabling Startup Delay";           Func = "Step-DisableStartupDelay" },
+            @{ Name = "Optimizing Memory Management";      Func = "Step-MemoryManagement" },
+            @{ Name = "Disabling Telemetry";               Func = "Step-DisableTelemetry" },
+            @{ Name = "Disabling Delivery Optimization";   Func = "Step-DisableDeliveryOptimization" },
+            @{ Name = "Configuring Windows Update Hours";  Func = "Step-WindowsUpdate" },
+            @{ Name = "Cleaning Temp Files";               Func = "Step-TempFiles" }
         )
 
-        # Capture all Step-* function definitions as a string to inject into runspace
-        $funcDefs = @"
+        $funcDefs = @'
 function Step-CreateRestorePoint {
     Enable-ComputerRestore -Drive 'C:\' -ErrorAction SilentlyContinue
-    Checkpoint-Computer -Description "Gaming Optimizer - $(Get-Date -Format 'yyyy-MM-dd HH:mm')" -RestorePointType 'MODIFY_SETTINGS' -ErrorAction Stop
+    Checkpoint-Computer -Description ("Gaming Optimizer v3 - " + (Get-Date -Format 'yyyy-MM-dd HH:mm')) -RestorePointType 'MODIFY_SETTINGS' -ErrorAction Stop
 }
 function Step-DisableServices {
-    `$services = @('DiagTrack','dmwappushservice','SysMain','WSearch','TabletInputService','wisvc','RetailDemo','Fax','MapsBroker','lfsvc')
-    foreach (`$s in `$services) {
-        try { Stop-Service -Name `$s -Force -ErrorAction SilentlyContinue; Set-Service -Name `$s -StartupType Disabled -ErrorAction SilentlyContinue } catch {}
-    }
+    $s = @('DiagTrack','dmwappushservice','SysMain','WSearch','TabletInputService','wisvc','RetailDemo','Fax','MapsBroker','lfsvc','XblAuthManager','XblGameSave','XboxGipSvc','XboxNetApiSvc','PcaSvc','RemoteRegistry')
+    foreach ($n in $s) { try { Stop-Service $n -Force -EA SilentlyContinue; Set-Service $n -StartupType Disabled -EA SilentlyContinue } catch {} }
 }
 function Step-PowerSettings {
-    `$guid = 'e9a42b02-d5df-448d-aa00-03f14749eb61'
-    powercfg -duplicatescheme `$guid 2>`$null; powercfg -setactive `$guid 2>`$null
+    $g='e9a42b02-d5df-448d-aa00-03f14749eb61'
+    powercfg -duplicatescheme $g 2>$null; powercfg -setactive $g 2>$null
     powercfg -change -monitor-timeout-ac 0; powercfg -change -disk-timeout-ac 0; powercfg -change -standby-timeout-ac 0
+    powercfg -setacvalueindex SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 be337238-0d82-4146-a960-4f3749d470c7 100
     powercfg -setactive SCHEME_CURRENT
 }
+function Step-DisablePowerThrottling {
+    $k='HKLM:\SYSTEM\CurrentControlSet\Control\Power\PowerThrottling'
+    if(!(Test-Path $k)){New-Item $k -Force|Out-Null}
+    Set-ItemProperty $k 'PowerThrottlingOff' -Type DWord -Value 1
+}
 function Step-GameDVR {
-    `$k1='HKCU:\Software\Microsoft\Windows\CurrentVersion\GameDVR'; `$k2='HKCU:\System\GameConfigStore'
-    if (!(Test-Path `$k1)) { New-Item -Path `$k1 -Force | Out-Null }
-    if (!(Test-Path `$k2)) { New-Item -Path `$k2 -Force | Out-Null }
-    Set-ItemProperty -Path `$k1 -Name 'AppCaptureEnabled' -Type DWord -Value 0
-    Set-ItemProperty -Path `$k2 -Name 'GameDVR_Enabled' -Type DWord -Value 0
+    $k1='HKCU:\Software\Microsoft\Windows\CurrentVersion\GameDVR'
+    $k2='HKCU:\System\GameConfigStore'
+    if(!(Test-Path $k1)){New-Item $k1 -Force|Out-Null}
+    if(!(Test-Path $k2)){New-Item $k2 -Force|Out-Null}
+    Set-ItemProperty $k1 'AppCaptureEnabled' -Type DWord -Value 0
+    Set-ItemProperty $k2 'GameDVR_Enabled' -Type DWord -Value 0
 }
 function Step-VisualEffects {
-    Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects' -Name 'VisualFXSetting' -Type DWord -Value 2 -ErrorAction SilentlyContinue
-    Set-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' -Name 'EnableTransparency' -Type DWord -Value 0 -ErrorAction SilentlyContinue
+    Set-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects' 'VisualFXSetting' -Type DWord -Value 2 -EA SilentlyContinue
+    Set-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' 'EnableTransparency' -Type DWord -Value 0 -EA SilentlyContinue
 }
 function Step-Network {
-    netsh interface tcp set global autotuninglevel=normal 2>`$null
-    netsh interface tcp set global congestionprovider=ctcp 2>`$null
-    netsh interface tcp set heuristics disabled 2>`$null
+    netsh interface tcp set global autotuninglevel=normal 2>$null
+    netsh interface tcp set global congestionprovider=ctcp 2>$null
+    netsh interface tcp set heuristics disabled 2>$null
+    netsh interface tcp set global rss=enabled 2>$null
+    $k='HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile'
+    Set-ItemProperty $k 'NetworkThrottlingIndex' -Type DWord -Value 0xffffffff -EA SilentlyContinue
 }
 function Step-BackgroundApps {
-    `$k='HKCU:\Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications'
-    if (!(Test-Path `$k)) { New-Item -Path `$k -Force | Out-Null }
-    Set-ItemProperty -Path `$k -Name 'GlobalUserDisabled' -Type DWord -Value 1
+    $k='HKCU:\Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications'
+    if(!(Test-Path $k)){New-Item $k -Force|Out-Null}
+    Set-ItemProperty $k 'GlobalUserDisabled' -Type DWord -Value 1
 }
 function Step-GPUScheduling {
-    `$k='HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers'
-    if (!(Test-Path `$k)) { New-Item -Path `$k -Force | Out-Null }
-    Set-ItemProperty -Path `$k -Name 'HwSchMode' -Type DWord -Value 2
+    $k='HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers'
+    if(!(Test-Path $k)){New-Item $k -Force|Out-Null}
+    Set-ItemProperty $k 'HwSchMode' -Type DWord -Value 2
 }
 function Step-GameMode {
-    `$k='HKCU:\Software\Microsoft\GameBar'
-    if (!(Test-Path `$k)) { New-Item -Path `$k -Force | Out-Null }
-    Set-ItemProperty -Path `$k -Name 'AutoGameModeEnabled' -Type DWord -Value 1
+    $k='HKCU:\Software\Microsoft\GameBar'
+    if(!(Test-Path $k)){New-Item $k -Force|Out-Null}
+    Set-ItemProperty $k 'AutoGameModeEnabled' -Type DWord -Value 1
+    Set-ItemProperty $k 'AllowAutoGameMode' -Type DWord -Value 1
 }
 function Step-Mouse {
-    Set-ItemProperty -Path 'HKCU:\Control Panel\Mouse' -Name 'MouseSpeed' -Value '0'
-    Set-ItemProperty -Path 'HKCU:\Control Panel\Mouse' -Name 'MouseThreshold1' -Value '0'
-    Set-ItemProperty -Path 'HKCU:\Control Panel\Mouse' -Name 'MouseThreshold2' -Value '0'
+    Set-ItemProperty 'HKCU:\Control Panel\Mouse' 'MouseSpeed' -Value '0'
+    Set-ItemProperty 'HKCU:\Control Panel\Mouse' 'MouseThreshold1' -Value '0'
+    Set-ItemProperty 'HKCU:\Control Panel\Mouse' 'MouseThreshold2' -Value '0'
 }
 function Step-FSO {
-    `$k='HKCU:\System\GameConfigStore'
-    if (!(Test-Path `$k)) { New-Item -Path `$k -Force | Out-Null }
-    Set-ItemProperty -Path `$k -Name 'GameDVR_FSEBehaviorMode' -Type DWord -Value 2
-    Set-ItemProperty -Path `$k -Name 'GameDVR_DXGIHonorFSEWindowsCompatible' -Type DWord -Value 1
+    $k='HKCU:\System\GameConfigStore'
+    if(!(Test-Path $k)){New-Item $k -Force|Out-Null}
+    Set-ItemProperty $k 'GameDVR_FSEBehaviorMode' -Type DWord -Value 2
+    Set-ItemProperty $k 'GameDVR_DXGIHonorFSEWindowsCompatible' -Type DWord -Value 1
+    Set-ItemProperty $k 'GameDVR_HonorUserFSEBehaviorMode' -Type DWord -Value 1
+}
+function Step-GamePriority {
+    $k='HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games'
+    if(!(Test-Path $k)){New-Item $k -Force|Out-Null}
+    Set-ItemProperty $k 'Affinity' -Type DWord -Value 0
+    Set-ItemProperty $k 'Background Only' -Type String -Value 'False'
+    Set-ItemProperty $k 'Clock Rate' -Type DWord -Value 10000
+    Set-ItemProperty $k 'GPU Priority' -Type DWord -Value 8
+    Set-ItemProperty $k 'Priority' -Type DWord -Value 6
+    Set-ItemProperty $k 'Scheduling Category' -Type String -Value 'High'
+    Set-ItemProperty $k 'SFIO Rate' -Type String -Value 'High'
+    $kp='HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile'
+    Set-ItemProperty $kp 'SystemResponsiveness' -Type DWord -Value 10
+}
+function Step-DisableDynamicTick { bcdedit /set disabledynamictick yes 2>$null }
+function Step-Win32Priority {
+    Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\PriorityControl' 'Win32PrioritySeparation' -Type DWord -Value 38
+}
+function Step-DisableCoreParking {
+    $k='HKLM:\SYSTEM\CurrentControlSet\Control\Power\PowerSettings\54533251-82be-4824-96c1-47b60b740d00\0cc5b647-c1df-4637-891a-dec35c318583'
+    if(Test-Path $k){Set-ItemProperty $k 'Attributes' -Type DWord -Value 0}
+    powercfg -setacvalueindex SCHEME_CURRENT 54533251-82be-4824-96c1-47b60b740d00 0cc5b647-c1df-4637-891a-dec35c318583 0 2>$null
+    powercfg -setactive SCHEME_CURRENT 2>$null
+}
+function Step-DisableStartupDelay {
+    $k='HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Serialize'
+    if(!(Test-Path $k)){New-Item $k -Force|Out-Null}
+    Set-ItemProperty $k 'StartupDelayInMSec' -Type DWord -Value 0
+}
+function Step-MemoryManagement {
+    $k='HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management'
+    Set-ItemProperty $k 'DisablePagingExecutive' -Type DWord -Value 1 -EA SilentlyContinue
+    Set-ItemProperty $k 'LargeSystemCache' -Type DWord -Value 0 -EA SilentlyContinue
+}
+function Step-DisableTelemetry {
+    $k='HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection'
+    if(!(Test-Path $k)){New-Item $k -Force|Out-Null}
+    Set-ItemProperty $k 'AllowTelemetry' -Type DWord -Value 0
+    $k2='HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\DataCollection'
+    if(!(Test-Path $k2)){New-Item $k2 -Force|Out-Null}
+    Set-ItemProperty $k2 'AllowTelemetry' -Type DWord -Value 0
+}
+function Step-DisableDeliveryOptimization {
+    $k='HKLM:\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization'
+    if(!(Test-Path $k)){New-Item $k -Force|Out-Null}
+    Set-ItemProperty $k 'DODownloadMode' -Type DWord -Value 0
 }
 function Step-WindowsUpdate {
-    `$k='HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings'
-    if (!(Test-Path `$k)) { New-Item -Path `$k -Force | Out-Null }
-    Set-ItemProperty -Path `$k -Name 'ActiveHoursStart' -Type DWord -Value 8 -ErrorAction SilentlyContinue
-    Set-ItemProperty -Path `$k -Name 'ActiveHoursEnd' -Type DWord -Value 23 -ErrorAction SilentlyContinue
+    $k='HKLM:\SOFTWARE\Microsoft\WindowsUpdate\UX\Settings'
+    if(!(Test-Path $k)){New-Item $k -Force|Out-Null}
+    Set-ItemProperty $k 'ActiveHoursStart' -Type DWord -Value 8 -EA SilentlyContinue
+    Set-ItemProperty $k 'ActiveHoursEnd' -Type DWord -Value 23 -EA SilentlyContinue
 }
 function Step-TempFiles {
-    Remove-Item -Path "`$env:TEMP\*" -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item -Path 'C:\Windows\Temp\*' -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item "$env:TEMP\*" -Recurse -Force -EA SilentlyContinue
+    Remove-Item 'C:\Windows\Temp\*' -Recurse -Force -EA SilentlyContinue
 }
-"@
+'@
 
         $ps = [powershell]::Create()
         [void]$ps.AddScript($funcDefs)
@@ -660,27 +756,23 @@ function Step-TempFiles {
                 $name = $step.Name
                 $func = $step.Func
                 $pct  = [int](($i / $total) * 100)
-
                 $dispatcher.Invoke([Action]{
                     $progressBar.Value  = $pct
-                    $progressLabel.Text = "Step $i of $total : $name"
-                },"Normal")
-
+                    $progressLabel.Text = "[$i/$total] $name..."
+                }, "Normal")
                 try {
                     & $func
-                    $ts = (Get-Date -Format "HH:mm:ss")
+                    $ts = Get-Date -Format "HH:mm:ss"
                     [void]$logList.Add("[$ts] [OK]   $name")
                 } catch {
-                    $ts = (Get-Date -Format "HH:mm:ss")
-                    [void]$logList.Add("[$ts] [FAIL] $name - $_")
+                    $ts = Get-Date -Format "HH:mm:ss"
+                    [void]$logList.Add("[$ts] [FAIL] $name : $_")
                 }
-
                 $dispatcher.Invoke([Action]{
                     $logBox.Text = $logList -join "`n"
                     $logBox.ScrollToEnd()
-                },"Normal")
-
-                Start-Sleep -Milliseconds 300
+                }, "Normal")
+                Start-Sleep -Milliseconds 200
             }
         }).AddArgument($stepList).AddArgument($Global:OptimizationLog).AddArgument($window.Dispatcher).AddArgument($optimizationProgress).AddArgument($progressText).AddArgument($logTextBox)
 
@@ -694,20 +786,14 @@ function Step-TempFiles {
                 try { $ps.EndInvoke($handle) } catch {}
                 $ps.Dispose()
                 $optimizationProgress.Value = 100
-                $progressText.Text  = "Optimization Complete!"
-                $restartBtn.IsEnabled  = $true
+                $progressText.Text = "All done! Restart to apply all changes."
                 $runTweaksBtn.IsEnabled = $true
                 [System.Windows.MessageBox]::Show(
-                    "All done! Restart your system for full effect.",
-                    "Complete", "OK", "Information")
+                    "All 22 optimizations complete!`n`nRestart your PC for full effect.",
+                    "Done", "OK", "Information")
             }
         })
         $timer.Start()
-    })
-
-    $restartBtn.Add_Click({
-        $r = [System.Windows.MessageBox]::Show("Restart now?", "Restart", "YesNo", "Question")
-        if ($r -eq "Yes") { Restart-Computer -Force }
     })
 
     $window.ShowDialog() | Out-Null
@@ -715,7 +801,6 @@ function Step-TempFiles {
 
 #endregion
 
-# Entry point
 try {
     $p = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
     if (-not $p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
