@@ -216,7 +216,13 @@ function Get-BIOSInstructions {
             $instructions += "✓ A-XMP: ENABLED`n"
             $instructions += "✓ Memory Fast Boot: ENABLED`n"
         }
-        { $_ -like "*Gigabyte*" -or $_ -like "*AORUS*" } {
+        "*Gigabyte*" {
+            $instructions += "Location: M.I.T. (Motherboard Intelligent Tweaker)`n"
+            $instructions += "✓ Performance Boost: Turbo`n"
+            $instructions += "✓ Extreme Memory Profile (XMP): Profile 1`n"
+            $instructions += "✓ High Bandwidth: ENABLED`n"
+        }
+        "*AORUS*" {
             $instructions += "Location: M.I.T. (Motherboard Intelligent Tweaker)`n"
             $instructions += "✓ Performance Boost: Turbo`n"
             $instructions += "✓ Extreme Memory Profile (XMP): Profile 1`n"
